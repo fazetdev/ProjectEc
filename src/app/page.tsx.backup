@@ -1,0 +1,173 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+
+// Define the type based on your actual database schema
+type Product = {
+  _id: string;
+  name: string;
+  description: string;
+  price: number;           // Purchase cost
+  sellingPrice: number;    // Expected selling price
+  expectedProfit: number;  // sellingPrice - price
+  actualProfit: number;
+  genderCategory: string;  // "male", "female", "neutral"
+  ageGroup: string;        // "boys", "girls", "neutral"
+  sizes: string[];         // Array of sizes like ["7", "8", "9"]
+  stockCount: number;
+  isSold: boolean;
+  dateAdded: string;
+  dateSold: string | null;
+};
+
+export default function Home() {
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch('/api/products')
+      .then(res => {
+        if (!res.ok) {
+          throw new Error(`HTTP error! status: ${res.status}`);
+        }
+        return res.json();
+      })
+      .then(data => {
+        setProducts(data);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error('Failed to fetch products:', err);
+        setError('Failed to load products. Please check your connection.');
+        setLoading(false);
+      });
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-xl">Loading products...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-xl text-red-600">{error}</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 p-4 md:p-6">
+      <header className="mb-8">
+        <h1 className="text-3xl font-bold text-gray-800">ProjectEc - Shoe Inventory</h1>
+        <p className="text-gray-600 mt-2">Track your shoe inventory, sales, and profits</p>
+      </header>
+
+      {products.length === 0 ? (
+        <div className="text-center py-12">
+          <p className="text-xl text-gray-500">No products in inventory. Add your first pair of shoes!</p>
+        </div>
+      ) : (
+        <>
+          <div className="mb-6">
+            <p className="text-gray-700">
+              Showing <span className="font-semibold">{products.length}</span> product{products.length !== 1 ? 's' : ''} in inventory
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {products.map((product) => (
+              <div key={product._id} className="bg-white rounded-lg shadow-md overflow-hidden border border-gray-200">
+                <div className="p-6">
+                  {/* Product Header */}
+                  <div className="flex justify-between items-start mb-4">
+                    <div>
+                      <h2 className="text-xl font-bold text-gray-800">{product.name}</h2>
+                      <p className="text-gray-600 text-sm mt-1">{product.description}</p>
+                    </div>
+                    <span className={`px-3 py-1 rounded-full text-sm font-medium ${product.isSold ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}`}>
+                      {product.isSold ? 'Sold' : 'In Stock'}
+                    </span>
+                  </div>
+
+                  {/* Categories */}
+                  <div className="flex gap-2 mb-4">
+                    <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-sm">
+                      {product.genderCategory}
+                    </span>
+                    <span className="px-3 py-1 bg-purple-100 text-purple-800 rounded-full text-sm">
+                      {product.ageGroup}
+                    </span>
+                  </div>
+
+                  {/* Sizes */}
+                  <div className="mb-4">
+                    <h3 className="text-sm font-semibold text-gray-700 mb-2">Available Sizes:</h3>
+                    <div className="flex flex-wrap gap-2">
+                      {product.sizes.map((size) => (
+                        <span key={size} className="px-3 py-1 bg-gray-100 text-gray-800 rounded-md text-sm">
+                          {size}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Pricing Information */}
+                  <div className="space-y-3 mb-6">
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Purchase Price:</span>
+                      <span className="font-semibold">₦{product.price.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Expected Selling Price:</span>
+                      <span className="font-semibold text-green-600">₦{product.sellingPrice.toFixed(2)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-600">Expected Profit:</span>
+                      <span className="font-semibold text-blue-600">₦{product.expectedProfit.toFixed(2)}</span>
+                    </div>
+                  </div>
+
+                  {/* Stock Information */}
+                  <div className="mb-6">
+                    <div className="flex justify-between items-center">
+                      <span className="text-gray-600">Stock Count:</span>
+                      <span className={`font-semibold ${product.stockCount > 5 ? 'text-green-600' : product.stockCount > 0 ? 'text-yellow-600' : 'text-red-600'}`}>
+                        {product.stockCount} units
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Sale Recording (to be implemented later) */}
+                  <div className="pt-4 border-t border-gray-200">
+                    <h3 className="text-sm font-semibold text-gray-700 mb-2">Record Sale:</h3>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          placeholder="Actual sold price"
+                          className="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm"
+                          disabled={product.isSold}
+                        />
+                        <button
+                          className={`px-4 py-2 rounded-md text-sm font-medium ${product.isSold ? 'bg-gray-300 text-gray-500 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+                          disabled={product.isSold}
+                        >
+                          {product.isSold ? 'Sold' : 'Mark Sold'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
