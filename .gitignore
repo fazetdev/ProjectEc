@@ -19,3 +19,5 @@ fix_line.js
 
 # OS
 .DS_Store
+.vercel
+.env*.local
