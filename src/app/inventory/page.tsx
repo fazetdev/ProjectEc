@@ -250,6 +250,7 @@ export default function Inventory() {
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Cost</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Selling Price</th>
                       <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Profit</th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200">
@@ -324,6 +325,15 @@ export default function Inventory() {
                             {!product.isSold && (
                               <div className="text-xs text-gray-500">(expected)</div>
                             )}
+                          </div>
+                        </td>
+                        <td className="px-4 py-4">
+                          <button
+                            onClick={() => {if (confirm("Delete this product?")) fetch(`/api/products/${product._id}`, { method: "DELETE" }).then(res => res.json()).then(data => {if (data.success) { alert("Product deleted"); fetchProducts(); } else { alert(data.error || "Delete failed"); }}).catch(err => { console.error(err); alert("Network error"); })}}
+                            className="px-3 py-1 bg-red-100 text-red-700 hover:bg-red-200 rounded text-sm font-medium"
+                            title="Delete product"
+                          >
+                            Delete
                           </div>
                         </td>
                       </tr>
