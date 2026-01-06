@@ -1,41 +1,28 @@
-// Always use real MongoDB for production
-console.log('🔧 Database Configuration');
-console.log('Using real MongoDB Atlas');
-
 import { MongoClient } from 'mongodb';
 
 const uri = process.env.MONGODB_URI;
 
 if (!uri) {
-  throw new Error('Please add your Mongo URI to .env.local');
+  throw new Error('MONGODB_URI is not defined');
 }
 
-const options = {
-  tls: true,
-  ssl: true,
-  serverSelectionTimeoutMS: 10000,
-};
-
-let client;
+let client: MongoClient;
 let clientPromise: Promise<MongoClient>;
 
-if (process.env.NODE_ENV === 'development') {
-  // In development mode, use a global variable so the connection
-  // is preserved across module reloads
-  const globalWithMongo = global as typeof globalThis & {
-    _mongoClientPromise?: Promise<MongoClient>;
-  };
+declare global {
+  // eslint-disable-next-line no-var
+  var _mongoClientPromise: Promise<MongoClient> | undefined;
+}
 
-  if (!globalWithMongo._mongoClientPromise) {
-    client = new MongoClient(uri, options);
-    globalWithMongo._mongoClientPromise = client.connect();
+if (process.env.NODE_ENV === 'development') {
+  if (!global._mongoClientPromise) {
+    client = new MongoClient(uri);
+    global._mongoClientPromise = client.connect();
   }
-  clientPromise = globalWithMongo._mongoClientPromise;
+  clientPromise = global._mongoClientPromise;
 } else {
-  // In production mode, it's best to not use a global variable
-  client = new MongoClient(uri, options);
+  client = new MongoClient(uri);
   clientPromise = client.connect();
 }
 
-// Export a module-scoped MongoClient promise
 export default clientPromise;
