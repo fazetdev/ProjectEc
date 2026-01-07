@@ -1,17 +1,23 @@
-import { MongoClient } from 'mongodb';
+import { MongoClient, ServerApiVersion } from 'mongodb';
 
 const uri = process.env.MONGODB_URI;
-const options = {};
-
-let client;
-let clientPromise: Promise<MongoClient>;
 
 if (!uri) {
-  throw new Error('Please define the MONGODB_URI environment variable in .env.local');
+  throw new Error('Please define the MONGODB_URI environment variable');
 }
 
+const options = {
+  serverApi: {
+    version: ServerApiVersion.v1,
+    strict: true,
+    deprecationErrors: true,
+  }
+};
+
+let client: MongoClient;
+let clientPromise: Promise<MongoClient>;
+
 if (process.env.NODE_ENV === 'development') {
-  // In development, use a global variable to preserve client across HMR
   let globalWithMongo = global as typeof globalThis & {
     _mongoClientPromise?: Promise<MongoClient>;
   };
@@ -22,7 +28,6 @@ if (process.env.NODE_ENV === 'development') {
   }
   clientPromise = globalWithMongo._mongoClientPromise;
 } else {
-  // In production, create a new client
   client = new MongoClient(uri, options);
   clientPromise = client.connect();
 }
