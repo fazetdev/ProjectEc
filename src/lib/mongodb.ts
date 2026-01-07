@@ -11,7 +11,11 @@ const options = {
     version: ServerApiVersion.v1,
     strict: true,
     deprecationErrors: true,
-  }
+  },
+  // Higher timeout and explicit settings to avoid handshake hang
+  connectTimeoutMS: 10000,
+  socketTimeoutMS: 45000,
+  family: 4 // Force IPv4
 };
 
 let client: MongoClient;
