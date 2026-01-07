@@ -1,24 +1,15 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { neon } from '@neondatabase/serverless';
+
+const sql = neon(process.env.DATABASE_URL!);
 
 export async function GET() {
   try {
-    console.log('🔍 GET /api/products - PostgreSQL');
-    
-    const products = await prisma.product.findMany({
-      orderBy: { dateAdded: 'desc' }
-    });
-    
-    console.log(`✅ Found ${products.length} products`);
-    
+    const products = await sql`SELECT * FROM products ORDER BY "dateAdded" DESC`;
     return NextResponse.json(products);
-    
-  } catch (error: any) {
-    console.error('DATABASE_GET_ERROR:', error);
-    return NextResponse.json({
-      error: 'Failed to fetch products',
-      details: error.message || 'Unknown error'
-    }, { status: 500 });
+  } catch (error) {
+    console.error('Neon GET Error:', error);
+    return NextResponse.json({ error: 'Failed to fetch products' }, { status: 500 });
   }
 }
 
@@ -26,66 +17,64 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     
-    // Validate required fields
-    if (!body.name?.trim()) {
-      return NextResponse.json(
-        { error: 'Product name is required' },
-        { status: 400 }
-      );
-    }
+    // Auto-create table if it doesn't exist (First run helper)
+    await sql`
+      CREATE TABLE IF NOT EXISTS products (
+        id SERIAL PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        price DECIMAL(12,2),
+        "sellingPrice" DECIMAL(12,2),
+        "expectedProfit" DECIMAL(12,2),
+        "actualProfit" DECIMAL(12,2) DEFAULT 0,
+        "totalSales" INTEGER DEFAULT 0,
+        "lastSaleDate" TIMESTAMP,
+        "lastSalePrice" DECIMAL(12,2) DEFAULT 0,
+        "genderCategory" TEXT DEFAULT 'neutral',
+        "ageGroup" TEXT DEFAULT 'neutral',
+        sizes TEXT[],
+        "stockCount" INTEGER,
+        "originalStock" INTEGER,
+        "isSold" BOOLEAN DEFAULT false,
+        "dateAdded" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        "dateSold" TIMESTAMP,
+        "imageFile" TEXT,
+        "bundleId" TEXT,
+        "baseName" TEXT,
+        "color" TEXT,
+        "size" TEXT
+      )
+    `;
 
-    if (!body.price || body.price <= 0) {
-      return NextResponse.json(
-        { error: 'Valid purchase price is required' },
-        { status: 400 }
-      );
-    }
+    const result = await sql`
+      INSERT INTO products (
+        name, description, price, "sellingPrice", "expectedProfit", "stockCount", "originalStock",
+        "genderCategory", "ageGroup", sizes, "imageFile"
+      ) VALUES (
+        ${body.name}, 
+        ${body.description || ''}, 
+        ${body.price}, 
+        ${body.sellingPrice},
+        ${body.sellingPrice - body.price},
+        ${parseInt(body.stockCount) || 1},
+        ${parseInt(body.stockCount) || 1},
+        ${body.genderCategory || 'neutral'},
+        ${body.ageGroup || 'neutral'},
+        ${body.sizes || []},
+        ${body.imageFile || ''}
+      ) RETURNING id
+    `;
 
-    if (!body.sellingPrice || body.sellingPrice <= 0) {
-      return NextResponse.json(
-        { error: 'Valid selling price is required' },
-        { status: 400 }
-      );
-    }
-
-    const stock = parseInt(body.stockCount) || 1;
-    if (stock < 1) {
-      return NextResponse.json(
-        { error: 'Valid stock count is required (minimum 1)' },
-        { status: 400 }
-      );
-    }
-
-    // Create product in PostgreSQL
-    const product = await prisma.product.create({
-      data: {
-        name: body.name.trim(),
-        description: body.description?.trim() || '',
-        price: parseFloat(body.price),
-        sellingPrice: parseFloat(body.sellingPrice),
-        expectedProfit: parseFloat(body.sellingPrice) - parseFloat(body.price),
-        genderCategory: body.genderCategory || 'neutral',
-        ageGroup: body.ageGroup || 'neutral',
-        sizes: body.sizes || [],
-        stockCount: stock,
-        originalStock: stock,
-        imageFile: body.imageFile || '',
-      }
-    });
-
-    console.log('✅ Product created:', product.id);
-    
     return NextResponse.json({ 
       success: true, 
-      productId: product.id,
-      product: product
+      id: result[0].id 
     }, { status: 201 });
-
-  } catch (error: any) {
-    console.error('DATABASE_POST_ERROR:', error);
-    return NextResponse.json({
+    
+  } catch (error) {
+    console.error('Neon POST Error:', error);
+    return NextResponse.json({ 
       error: 'Failed to add product',
-      details: error.message || 'Unknown error'
+      details: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 });
   }
 }
