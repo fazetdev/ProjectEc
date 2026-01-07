@@ -8,44 +8,49 @@ datasource db {
 }
 
 model Product {
-  id              String    @id @default(cuid())
+  id              Int       @id @default(autoincrement())
+  shoeCode        String?   @unique @map("shoe_code")
   name            String
   description     String?
   price           Float
-  sellingPrice    Float
-  expectedProfit  Float
-  actualProfit    Float     @default(0)
-  totalSales      Int       @default(0)
-  lastSaleDate    DateTime?
-  lastSalePrice   Float     @default(0)
-  genderCategory  String    @default("neutral")
-  ageGroup        String    @default("neutral")
+  sellingPrice    Float     @map("selling_price")
+  expectedProfit  Float     @map("expected_profit")
+  actualProfit    Float     @default(0) @map("actual_profit")
+  totalSales      Int       @default(0) @map("total_sales")
+  lastSaleDate    DateTime? @map("last_sale_date")
+  lastSalePrice   Float     @default(0) @map("last_sale_price")
+  genderCategory  String    @default("neutral") @map("gender_category")
+  ageGroup        String    @default("neutral") @map("age_group")
   sizes           String[]
-  stockCount      Int
-  originalStock   Int
-  isSold          Boolean   @default(false)
-  dateAdded       DateTime  @default(now())
-  dateSold        DateTime?
-  imageFile       String?
+  stockCount      Int       @default(1) @map("stock_count")
+  originalStock   Int       @default(1) @map("original_stock")
+  isSold          Boolean   @default(false) @map("is_sold")
+  dateAdded       DateTime  @default(now()) @map("date_added")
+  dateSold        DateTime? @map("date_sold")
+  imageFile       String?   @map("image_file")
+  
+  // New fields for shoe tagging system
+  color           String?
+  condition       String?   @default("new")
+  location        String?
+  notes           String?
   
   // Bundle fields (optional)
-  bundleId        String?
-  baseName        String?
-  color           String?
-  size            String?
+  bundleId        String?   @map("bundle_id")
+  baseName        String?   @map("base_name")
 
   @@map("products")
 }
 
 model Sale {
-  id          String    @id @default(cuid())
-  productId   String
-  productName String
-  salePrice   Float
-  costPrice   Float
+  id          Int     @id @default(autoincrement())
+  productId   Int     @map("product_id")
+  productName String  @map("product_name")
+  salePrice   Float   @map("sale_price")
+  costPrice   Float   @map("cost_price")
   profit      Float
-  quantity    Int       @default(1)
-  saleDate    DateTime  @default(now())
+  quantity    Int     @default(1)
+  saleDate    DateTime @default(now()) @map("sale_date")
   timestamp   BigInt
 
   @@map("sales")

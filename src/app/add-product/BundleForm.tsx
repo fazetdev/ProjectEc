@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 type ShoePair = {
   size: string;
   color: string;
+  shoeCode: string; // Added: Individual shoe code for each pair
 };
 
 export default function BundleForm() {
@@ -34,21 +35,57 @@ export default function BundleForm() {
     shoePairs: [] as ShoePair[],
     stockPerItem: '1',
     bundleImage: '', // ONE image for ALL shoes in bundle
+    bundleCodePrefix: '', // e.g., ML-SH, FM-SH, CH-SH
+    location: '',
+    condition: 'new',
   });
+
+  // Generate shoe code based on size and color
+  const generateShoeCode = (size: string, color: string, index: number) => {
+    if (!formData.bundleCodePrefix) return '';
+    
+    const sizeCode = size.padStart(2, '0');
+    const colorCode = color.substring(0, 3).toUpperCase();
+    const sequence = (index + 1).toString().padStart(3, '0');
+    
+    return `${formData.bundleCodePrefix}-${sizeCode}-${colorCode}-${sequence}`;
+  };
+
+  // Update shoe codes when prefix, sizes, or colors change
+  const updateShoeCodes = () => {
+    setFormData(prev => ({
+      ...prev,
+      shoePairs: prev.shoePairs.map((pair, index) => ({
+        ...pair,
+        shoeCode: generateShoeCode(pair.size, pair.color, index)
+      }))
+    }));
+  };
 
   // Add a new size-color pair
   const addShoePair = () => {
-    setFormData(prev => ({
-      ...prev,
-      shoePairs: [...prev.shoePairs, { size: '', color: '' }]
-    }));
+    setFormData(prev => {
+      const newPairs = [...prev.shoePairs, { size: '', color: '', shoeCode: '' }];
+      return {
+        ...prev,
+        shoePairs: newPairs
+      };
+    });
   };
 
   // Update a specific shoe pair
   const updateShoePair = (index: number, field: 'size' | 'color', value: string) => {
     setFormData(prev => {
       const updatedPairs = [...prev.shoePairs];
-      updatedPairs[index] = { ...updatedPairs[index], [field]: value };
+      updatedPairs[index] = {
+        ...updatedPairs[index],
+        [field]: value,
+        shoeCode: generateShoeCode(
+          field === 'size' ? value : updatedPairs[index].size,
+          field === 'color' ? value : updatedPairs[index].color,
+          index
+        )
+      };
       return { ...prev, shoePairs: updatedPairs };
     });
   };
@@ -61,22 +98,6 @@ export default function BundleForm() {
     }));
   };
 
-  // Get available sizes
-  const getAvailableSizes = () => {
-    const selectedSizes = formData.shoePairs.map(pair => pair.size);
-    const allSizes = ageGroup === 'adult' ? adultSizes : childSizes;
-    return allSizes.filter(size => !selectedSizes.includes(size));
-  };
-
-  // Auto-suggest image name
-  const suggestImageName = () => {
-    if (!formData.baseName) return '';
-    const base = formData.baseName.toLowerCase().replace(/\s+/g, '-');
-    const colors = Array.from(new Set(formData.shoePairs.map(p => p.color).filter(Boolean)));
-    const colorStr = colors.length > 0 ? `-${colors.join('-')}` : '';
-    return `${base}${colorStr}-bundle.jpg`;
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
@@ -84,33 +105,56 @@ export default function BundleForm() {
     setSuccess('');
 
     try {
-      // Validate
-      if (formData.shoePairs.length === 0) {
-        throw new Error('Please add at least one shoe to the bundle');
+      // Validate required fields
+      if (!formData.baseName.trim()) {
+        throw new Error('Bundle design name is required');
       }
 
-      // Check all shoes have size and color
+      if (!formData.bundleCodePrefix.trim()) {
+        throw new Error('Bundle code prefix is required (e.g., ML-SH, FM-SH, CH-SH)');
+      }
+
+      if (!formData.price || parseFloat(formData.price) <= 0) {
+        throw new Error('Valid purchase price is required');
+      }
+
+      if (!formData.sellingPrice || parseFloat(formData.sellingPrice) <= 0) {
+        throw new Error('Valid selling price is required');
+      }
+
+      if (formData.shoePairs.length === 0) {
+        throw new Error('Add at least one size-color combination');
+      }
+
+      // Validate each shoe pair has size and color
       for (const pair of formData.shoePairs) {
         if (!pair.size || !pair.color) {
-          throw new Error('All shoes must have both size and color selected');
+          throw new Error('Each shoe must have both size and color');
         }
       }
 
-      if (!formData.bundleImage) {
-        throw new Error('Please provide an image filename for the bundle');
+      if (!formData.bundleImage.trim()) {
+        throw new Error('Bundle image filename is required');
       }
 
-      // Prepare bundle data - ALL shoes get SAME image
+      // Prepare bundle data
       const bundleData = {
         baseName: formData.baseName.trim(),
         description: formData.description.trim(),
         price: parseFloat(formData.price),
         sellingPrice: parseFloat(formData.sellingPrice),
         genderCategory: formData.genderCategory,
-        ageGroup: ageGroup,
-        shoePairs: formData.shoePairs,
+        ageGroup: ageGroup === 'adult' ? 'adults' : 'children',
+        shoePairs: formData.shoePairs.map((pair, index) => ({
+          size: pair.size,
+          color: pair.color,
+          shoeCode: pair.shoeCode || generateShoeCode(pair.size, pair.color, index)
+        })),
         stockPerItem: parseInt(formData.stockPerItem) || 1,
-        imageFile: formData.bundleImage, // Same image for ALL shoes
+        imageFile: formData.bundleImage,
+        bundleCodePrefix: formData.bundleCodePrefix.trim(),
+        location: formData.location.trim(),
+        condition: formData.condition,
       };
 
       const response = await fetch('/api/products/bulk', {
@@ -121,15 +165,31 @@ export default function BundleForm() {
         body: JSON.stringify(bundleData),
       });
 
-      const result = await response.json();
-
       if (!response.ok) {
-        throw new Error(result.error || 'Failed to create bundle');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create bundle');
       }
 
-      setSuccess(`Created ${result.count} shoes successfully! Redirecting to inventory...`);
+      const result = await response.json();
+      setSuccess(`Bundle created successfully! ${result.count} shoes added with prefix: ${formData.bundleCodePrefix}`);
 
-      // Redirect after 3 seconds
+      // Reset form
+      setFormData({
+        baseName: '',
+        description: '',
+        price: '',
+        sellingPrice: '',
+        genderCategory: 'neutral',
+        shoePairs: [],
+        stockPerItem: '1',
+        bundleImage: '',
+        bundleCodePrefix: '',
+        location: '',
+        condition: 'new',
+      });
+      setAgeGroup('adult');
+
+      // Redirect to inventory after 3 seconds
       setTimeout(() => {
         router.push('/inventory');
       }, 3000);
@@ -140,14 +200,6 @@ export default function BundleForm() {
       setIsSubmitting(false);
     }
   };
-
-  // Calculate profit
-  const profitPerItem = formData.price && formData.sellingPrice 
-    ? parseFloat(formData.sellingPrice) - parseFloat(formData.price)
-    : 0;
-
-  // Get unique colors in bundle
-  const uniqueColors = Array.from(new Set(formData.shoePairs.map(p => p.color).filter(Boolean)));
 
   return (
     <div className="bg-gray-800/50 border border-gray-700 rounded-xl">
@@ -162,103 +214,98 @@ export default function BundleForm() {
         {success && (
           <div className="p-4 bg-green-500/10 border border-green-500/30 rounded-lg">
             <p className="text-green-400 text-center">{success}</p>
+            <p className="text-green-500 text-sm text-center mt-1">Redirecting to inventory...</p>
           </div>
         )}
 
-        {/* Age Group Selection */}
-        <div>
-          <h2 className="text-lg font-semibold mb-4 text-white">1. Select Age Group</h2>
-          <div className="flex gap-4">
-            <button
-              type="button"
-              onClick={() => {
-                setAgeGroup('adult');
-                setFormData(prev => ({ ...prev, shoePairs: [] }));
+        {/* Bundle Code Prefix */}
+        <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4">
+          <h2 className="text-lg font-semibold mb-3 text-white">Bundle Tagging System</h2>
+          
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-blue-300 mb-2">
+              Bundle Code Prefix * (e.g., ML-SH, FM-SH, CH-SH, BOY-SH, GIRL-SH)
+            </label>
+            <input
+              type="text"
+              required
+              value={formData.bundleCodePrefix}
+              onChange={(e) => {
+                setFormData({...formData, bundleCodePrefix: e.target.value});
+                setTimeout(updateShoeCodes, 100); // Update codes after a delay
               }}
-              className={`flex-1 py-4 rounded-lg border-2 text-center font-medium ${
-                ageGroup === 'adult'
-                  ? 'border-blue-500 bg-blue-500/10 text-blue-400'
-                  : 'border-gray-700 bg-gray-800/50 text-gray-400 hover:bg-gray-800'
-              }`}
-            >
-              👟 Adult Shoes
-              <div className="text-sm mt-1">Sizes 33-46</div>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                setAgeGroup('child');
-                setFormData(prev => ({ ...prev, shoePairs: [] }));
-              }}
-              className={`flex-1 py-4 rounded-lg border-2 text-center font-medium ${
-                ageGroup === 'child'
-                  ? 'border-blue-500 bg-blue-500/10 text-blue-400'
-                  : 'border-gray-700 bg-gray-800/50 text-gray-400 hover:bg-gray-800'
-              }`}
-            >
-              👶 Child Shoes
-              <div className="text-sm mt-1">Sizes 20-32</div>
-            </button>
+              className="w-full px-4 py-3 bg-gray-800 border border-blue-500/50 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="Enter bundle prefix"
+            />
+            <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-blue-300">
+              <div>• ML-SH = Men's Large Shoes</div>
+              <div>• FM-SH = Female Medium Shoes</div>
+              <div>• CH-SH = Children Shoes</div>
+              <div>• BOY-SH = Boys Shoes</div>
+              <div>• GIRL-SH = Girls Shoes</div>
+            </div>
           </div>
+
+          {/* Generated Codes Preview */}
+          {formData.bundleCodePrefix && formData.shoePairs.length > 0 && (
+            <div className="mt-4">
+              <p className="text-sm text-blue-300 mb-2">Generated Shoe Codes:</p>
+              <div className="flex flex-wrap gap-2">
+                {formData.shoePairs.map((pair, index) => (
+                  <div key={index} className="px-3 py-2 bg-blue-500/20 text-blue-400 rounded-lg text-sm">
+                    {pair.shoeCode || generateShoeCode(pair.size, pair.color, index)}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Basic Information */}
+        {/* Basic Bundle Info */}
         <div>
-          <h2 className="text-lg font-semibold mb-4 text-white">2. Shoe Design</h2>
+          <h2 className="text-lg font-semibold mb-4 text-white">Bundle Information</h2>
+
           <div className="space-y-4">
+            {/* Base Name */}
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">
-                Design Name *
+                Bundle Design Name *
               </label>
               <input
                 type="text"
                 required
                 value={formData.baseName}
                 onChange={(e) => setFormData({...formData, baseName: e.target.value})}
-                className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="e.g., Blue Rubber Shoes for Men"
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="e.g., Classic Rubber Shoes, Sports Sneakers"
               />
-              <p className="text-xs text-gray-500 mt-1">Base name for all shoes in bundle</p>
             </div>
 
+            {/* Description */}
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">
-                Additional Notes
+                Description
               </label>
               <input
                 type="text"
                 value={formData.description}
                 onChange={(e) => setFormData({...formData, description: e.target.value})}
-                className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                placeholder="e.g., New design, comfortable sole"
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="e.g., Comfortable design, good for daily wear"
               />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                For Whom?
-              </label>
-              <select
-                value={formData.genderCategory}
-                onChange={(e) => setFormData({...formData, genderCategory: e.target.value})}
-                className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="neutral">Unisex/Neutral</option>
-                <option value="male">Men</option>
-                <option value="female">Women</option>
-              </select>
             </div>
           </div>
         </div>
 
         {/* Pricing */}
         <div>
-          <h2 className="text-lg font-semibold mb-4 text-white">3. Pricing (₦ Naira)</h2>
+          <h2 className="text-lg font-semibold mb-4 text-white">Pricing (₦ Naira)</h2>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Purchase Price */}
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">
-                Your Cost Price *
+                Cost Price per Pair *
               </label>
               <input
                 type="number"
@@ -266,15 +313,16 @@ export default function BundleForm() {
                 required
                 value={formData.price}
                 onChange={(e) => setFormData({...formData, price: e.target.value})}
-                className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="0.00"
                 min="0"
               />
             </div>
 
+            {/* Selling Price */}
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">
-                Selling Price *
+                Selling Price per Pair *
               </label>
               <input
                 type="number"
@@ -282,7 +330,7 @@ export default function BundleForm() {
                 required
                 value={formData.sellingPrice}
                 onChange={(e) => setFormData({...formData, sellingPrice: e.target.value})}
-                className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="0.00"
                 min="0"
               />
@@ -293,230 +341,255 @@ export default function BundleForm() {
           {formData.price && formData.sellingPrice && (
             <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
               <p className="text-sm text-blue-400">
-                Profit per shoe: ₦{profitPerItem.toFixed(2)}
-                {formData.shoePairs.length > 0 && (
-                  <span className="ml-2">
-                    • Total potential: ₦{(profitPerItem * formData.shoePairs.length).toFixed(2)}
-                  </span>
-                )}
+                Expected Profit per pair: ₦{(parseFloat(formData.sellingPrice || '0') - parseFloat(formData.price || '0')).toFixed(2)}
               </p>
             </div>
           )}
         </div>
 
-        {/* Size-Color Pairs */}
+        {/* Categories */}
+        <div>
+          <h2 className="text-lg font-semibold mb-4 text-white">Categories</h2>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Gender Category */}
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                For Whom? *
+              </label>
+              <select
+                value={formData.genderCategory}
+                onChange={(e) => setFormData({...formData, genderCategory: e.target.value})}
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="male">Men</option>
+                <option value="female">Women</option>
+                <option value="neutral">Unisex/Neutral</option>
+              </select>
+            </div>
+
+            {/* Age Group */}
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Age Group *
+              </label>
+              <div className="flex gap-4">
+                <button
+                  type="button"
+                  onClick={() => setAgeGroup('adult')}
+                  className={`px-4 py-3 rounded-lg font-medium ${
+                    ageGroup === 'adult' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                  }`}
+                >
+                  Adults
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setAgeGroup('child')}
+                  className={`px-4 py-3 rounded-lg font-medium ${
+                    ageGroup === 'child' ? 'bg-blue-600 text-white' : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                  }`}
+                >
+                  Children
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Size-Color Combinations */}
         <div>
           <div className="flex justify-between items-center mb-4">
-            <h2 className="text-lg font-semibold text-white">4. Add Shoes to Bundle</h2>
+            <h2 className="text-lg font-semibold text-white">Size & Color Combinations</h2>
             <button
               type="button"
               onClick={addShoePair}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg font-medium"
+              className="px-4 py-2 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600"
             >
-              + Add Shoe
+              + Add Combination
             </button>
           </div>
 
           {formData.shoePairs.length === 0 ? (
-            <div className="text-center py-6 border-2 border-dashed border-gray-700 rounded-lg">
-              <p className="text-gray-400">No shoes added yet</p>
-              <p className="text-gray-500 text-sm mt-1">Click "Add Shoe" to start</p>
+            <div className="text-center py-6 text-gray-500 border-2 border-dashed border-gray-700 rounded-lg">
+              <p>No size-color combinations added yet</p>
+              <p className="text-sm mt-1">Click "Add Combination" to start</p>
             </div>
           ) : (
             <div className="space-y-4">
-              {formData.shoePairs.map((pair, index) => {
-                const availableSizes = getAvailableSizes();
-                const allSizes = ageGroup === 'adult' ? adultSizes : childSizes;
-                const sizesForThisShoe = [...availableSizes, pair.size].filter(Boolean);
-                
-                return (
-                  <div key={index} className="p-4 bg-gray-800/30 border border-gray-700 rounded-lg">
-                    <div className="flex justify-between items-center mb-3">
-                      <h3 className="font-medium">Shoe #{index + 1}</h3>
-                      <button
-                        type="button"
-                        onClick={() => removeShoePair(index)}
-                        className="text-red-400 hover:text-red-300"
+              {formData.shoePairs.map((pair, index) => (
+                <div key={index} className="p-4 bg-gray-800/50 border border-gray-700 rounded-lg">
+                  <div className="flex justify-between items-start mb-3">
+                    <h3 className="text-sm font-medium text-gray-300">Combination #{index + 1}</h3>
+                    <button
+                      type="button"
+                      onClick={() => removeShoePair(index)}
+                      className="text-red-400 hover:text-red-300"
+                    >
+                      Remove
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* Size Selection */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Size *
+                      </label>
+                      <select
+                        required
+                        value={pair.size}
+                        onChange={(e) => updateShoePair(index, 'size', e.target.value)}
+                        className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                       >
-                        Remove
-                      </button>
+                        <option value="">Select size</option>
+                        {(ageGroup === 'adult' ? adultSizes : childSizes).map(size => (
+                          <option key={size} value={size}>{size}</option>
+                        ))}
+                      </select>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {/* Size Selection */}
-                      <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-2">
-                          Size *
-                        </label>
+                    {/* Color Selection */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Color *
+                      </label>
+                      <div className="flex gap-2">
                         <select
-                          value={pair.size}
-                          onChange={(e) => updateShoePair(index, 'size', e.target.value)}
-                          className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
                           required
-                        >
-                          <option value="">Select size</option>
-                          {allSizes.map(size => (
-                            <option 
-                              key={size} 
-                              value={size}
-                              disabled={!sizesForThisShoe.includes(size)}
-                            >
-                              Size {size} {pair.size === size ? '' : !availableSizes.includes(size) ? '(already selected)' : ''}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      {/* Color Selection */}
-                      <div>
-                        <label className="block text-sm font-medium text-gray-300 mb-2">
-                          Color *
-                        </label>
-                        <select
                           value={pair.color}
                           onChange={(e) => updateShoePair(index, 'color', e.target.value)}
-                          className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                          required
+                          className="flex-1 px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         >
                           <option value="">Select color</option>
                           {commonColors.map(color => (
-                            <option key={color} value={color}>
-                              {color}
-                            </option>
+                            <option key={color} value={color}>{color}</option>
                           ))}
                         </select>
+                        <input
+                          type="text"
+                          value={pair.color}
+                          onChange={(e) => updateShoePair(index, 'color', e.target.value)}
+                          className="flex-1 px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          placeholder="Or type custom color"
+                        />
                       </div>
                     </div>
 
-                    {/* Preview */}
-                    {pair.size && pair.color && (
-                      <div className="mt-3 p-2 bg-gray-900/50 rounded text-sm">
-                        This shoe: <span className="text-blue-400">{formData.baseName || 'Design'} - {pair.color} (Size {pair.size})</span>
+                    {/* Generated Code Display */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-300 mb-2">
+                        Shoe Code
+                      </label>
+                      <div className="px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-blue-400 font-mono text-sm">
+                        {pair.shoeCode || 'Enter prefix, size, and color'}
                       </div>
-                    )}
+                    </div>
                   </div>
-                );
-              })}
+                </div>
+              ))}
             </div>
           )}
+        </div>
 
-          {formData.shoePairs.length > 0 && (
-            <div className="mt-4 p-3 bg-gray-800/50 rounded-lg">
-              <p className="text-sm text-gray-300">
-                Bundle has {formData.shoePairs.length} shoes with {uniqueColors.length} colors: {uniqueColors.join(', ')}
-              </p>
+        {/* Inventory Details */}
+        <div>
+          <h2 className="text-lg font-semibold mb-4 text-white">Inventory Details</h2>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Stock per Item */}
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Stock per Size-Color *
+              </label>
+              <input
+                type="number"
+                required
+                value={formData.stockPerItem}
+                onChange={(e) => setFormData({...formData, stockPerItem: e.target.value})}
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                min="1"
+                placeholder="1"
+              />
+              <p className="text-xs text-gray-500 mt-1">Pairs per combination</p>
             </div>
-          )}
+
+            {/* Condition */}
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Condition
+              </label>
+              <select
+                value={formData.condition}
+                onChange={(e) => setFormData({...formData, condition: e.target.value})}
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="new">New</option>
+                <option value="used">Used</option>
+                <option value="refurbished">Refurbished</option>
+                <option value="washed">Washed</option>
+              </select>
+            </div>
+
+            {/* Location */}
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Storage Location
+              </label>
+              <input
+                type="text"
+                value={formData.location}
+                onChange={(e) => setFormData({...formData, location: e.target.value})}
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="e.g., Shelf A, Box 3"
+              />
+            </div>
+          </div>
         </div>
 
         {/* Bundle Image */}
         <div>
-          <h2 className="text-lg font-semibold mb-4 text-white">5. Bundle Image</h2>
-          
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Image Filename *
-              </label>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  required
-                  value={formData.bundleImage}
-                  onChange={(e) => setFormData({...formData, bundleImage: e.target.value})}
-                  className="flex-1 px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g., blue-black-red-bundle.jpg"
-                />
-                <button
-                  type="button"
-                  onClick={() => setFormData(prev => ({ ...prev, bundleImage: suggestImageName() }))}
-                  className="px-4 py-3 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600"
-                >
-                  Suggest
-                </button>
-              </div>
-              <p className="text-xs text-gray-500 mt-1">
-                Take ONE photo of all {formData.shoePairs.length} shoes together. Save in <code className="bg-gray-900 px-1 rounded">public/shoes/</code>
-              </p>
-            </div>
+          <h2 className="text-lg font-semibold mb-4 text-white">Bundle Image</h2>
 
-            {/* Image Preview Note */}
-            <div className="p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
-              <p className="text-sm text-blue-400">
-                📸 <strong>Photo Tip:</strong> Arrange all {formData.shoePairs.length} shoes together in one photo.
-                Customers will see the actual colors in the photo.
-              </p>
-              <p className="text-xs text-blue-300 mt-1">
-                Example filename: "{suggestImageName()}"
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Stock */}
-        <div>
-          <h2 className="text-lg font-semibold mb-4 text-white">6. Stock</h2>
           <div>
             <label className="block text-sm font-medium text-gray-300 mb-2">
-              Stock per Shoe *
+              Image Filename * (Same for all shoes in bundle)
             </label>
             <input
-              type="number"
+              type="text"
               required
-              value={formData.stockPerItem}
-              onChange={(e) => setFormData({...formData, stockPerItem: e.target.value})}
-              className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              min="1"
-              placeholder="1"
+              value={formData.bundleImage}
+              onChange={(e) => setFormData({...formData, bundleImage: e.target.value})}
+              className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="e.g., classic-rubber-shoes.jpg"
             />
-            <p className="text-xs text-gray-500 mt-1">Usually 1 per shoe in bundles</p>
+            <p className="text-xs text-gray-500 mt-1">
+              Place bundle image in <code className="bg-gray-900 px-1 rounded">public/shoes/</code> folder
+            </p>
           </div>
         </div>
 
         {/* Submit Buttons */}
-        <div className="pt-6 border-t border-gray-700">
-          {/* Preview */}
-          {formData.shoePairs.length > 0 && (
-            <div className="mb-6 p-4 bg-gray-800/30 rounded-lg">
-              <h3 className="font-semibold mb-2">Bundle Preview</h3>
-              <p className="text-gray-300">
-                Creating <span className="text-blue-400 font-bold">{formData.shoePairs.length}</span> shoes with ONE image:
-              </p>
-              <div className="mt-2 space-y-1">
-                {formData.shoePairs.map((pair, index) => (
-                  <div key={index} className="text-sm text-gray-400">
-                    • {formData.baseName || 'Design'} - {pair.color || '?'} (Size {pair.size || '?'})
-                  </div>
-                ))}
-              </div>
-              <div className="mt-3 p-2 bg-gray-900/50 rounded">
-                <p className="text-sm text-gray-300">All shoes will use image: <code className="bg-gray-800 px-2 py-1 rounded">{formData.bundleImage || 'No image set'}</code></p>
-              </div>
-            </div>
-          )}
+        <div className="flex gap-4 pt-6 border-t border-gray-700">
+          <button
+            type="submit"
+            disabled={isSubmitting}
+            className={`px-6 py-3 rounded-lg font-medium ${
+              isSubmitting
+                ? 'bg-blue-500/50 cursor-not-allowed'
+                : 'bg-blue-600 hover:bg-blue-700'
+            } text-white transition-colors`}
+          >
+            {isSubmitting ? 'Creating Bundle...' : `Create Bundle (${formData.shoePairs.length} shoes)`}
+          </button>
 
-          {/* Submit Buttons */}
-          <div className="flex gap-4">
-            <button
-              type="submit"
-              disabled={isSubmitting || formData.shoePairs.length === 0 || !formData.bundleImage}
-              className={`flex-1 py-3 rounded-lg font-medium ${
-                isSubmitting || formData.shoePairs.length === 0 || !formData.bundleImage
-                  ? 'bg-blue-500/50 cursor-not-allowed'
-                  : 'bg-blue-600 hover:bg-blue-700'
-              } text-white transition-colors`}
-            >
-              {isSubmitting ? 'Creating...' : `Create ${formData.shoePairs.length} Shoes`}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => router.back()}
-              className="px-6 py-3 border border-gray-700 text-gray-300 rounded-lg font-medium hover:bg-gray-800"
-            >
-              Cancel
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className="px-6 py-3 border border-gray-700 text-gray-300 rounded-lg font-medium hover:bg-gray-800"
+          >
+            Cancel
+          </button>
         </div>
       </form>
     </div>

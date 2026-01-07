@@ -24,3 +24,5 @@ fix_line.js
 .env*
 
 /src/generated/prisma
+scripts/*.sql
+scripts/*.js

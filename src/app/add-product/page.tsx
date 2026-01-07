@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-// Import the Bundle form component (we'll create it inline)
+// Import the Bundle form component
 import BundleForm from './BundleForm';
 
 type TabType = 'single' | 'bundle';
@@ -19,6 +19,9 @@ export default function AddProduct() {
         <div className="mb-8">
           <h1 className="text-2xl font-bold mb-2">Add Shoes to Inventory</h1>
           <p className="text-gray-400">Choose how you want to add shoes</p>
+          <p className="text-sm text-blue-400 mt-2">
+            💡 Use shoe codes like: ML-SH-001 (Men's Large), FM-SH-110 (Female Medium), CH-SH-024 (Children)
+          </p>
         </div>
 
         {/* Tab Selection */}
@@ -52,22 +55,12 @@ export default function AddProduct() {
 
         {/* Tab Content */}
         {activeTab === 'single' ? <SingleProductForm /> : <BundleForm />}
-
-        {/* Simple Note */}
-        <div className="mt-6 p-4 bg-gray-800/30 border border-gray-700 rounded-lg">
-          <p className="text-sm text-gray-400 text-center">
-            {activeTab === 'single' 
-              ? 'For unique single shoes with specific details'
-              : 'For bundles of same design in multiple sizes & colors'
-            }
-          </p>
-        </div>
       </div>
     </div>
   );
 }
 
-// Single Product Form (your original form)
+// Single Product Form with Shoe Code
 function SingleProductForm() {
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -75,6 +68,7 @@ function SingleProductForm() {
   const [success, setSuccess] = useState('');
 
   const [formData, setFormData] = useState({
+    shoeCode: '', // NEW: Shoe Code field
     name: '',
     description: '',
     price: '',
@@ -84,6 +78,10 @@ function SingleProductForm() {
     sizes: [] as string[],
     stockCount: '1',
     imageFile: '',
+    color: '', // NEW: Color field
+    condition: 'new', // NEW: Condition field
+    location: '', // NEW: Location field
+    notes: '', // NEW: Notes field
   });
 
   const [currentSize, setCurrentSize] = useState('');
@@ -96,17 +94,24 @@ function SingleProductForm() {
 
     try {
       // Validate required fields
+      if (!formData.shoeCode.trim()) {
+        throw new Error('Shoe Code is required (e.g., ML-SH-001, FM-SH-110)');
+      }
+      
       if (!formData.name.trim()) {
         throw new Error('Shoe name/description is required');
       }
+      
       if (!formData.price || parseFloat(formData.price) <= 0) {
         throw new Error('Valid purchase price is required');
       }
+      
       if (!formData.sellingPrice || parseFloat(formData.sellingPrice) <= 0) {
         throw new Error('Valid selling price is required');
       }
 
       const productData = {
+        shoeCode: formData.shoeCode.trim(),
         name: formData.name.trim(),
         description: formData.description.trim(),
         price: parseFloat(formData.price),
@@ -121,6 +126,10 @@ function SingleProductForm() {
         dateAdded: new Date().toISOString(),
         dateSold: null,
         imageFile: formData.imageFile,
+        color: formData.color.trim(),
+        condition: formData.condition,
+        location: formData.location.trim(),
+        notes: formData.notes.trim(),
       };
 
       const response = await fetch('/api/products', {
@@ -136,10 +145,12 @@ function SingleProductForm() {
         throw new Error(errorData.error || 'Failed to add shoe');
       }
 
-      setSuccess('Shoe added to inventory successfully!');
+      const result = await response.json();
+      setSuccess(`Shoe added successfully! Code: ${result.shoeCode}`);
 
-      // Reset form
+      // Reset form but keep some defaults
       setFormData({
+        shoeCode: '',
         name: '',
         description: '',
         price: '',
@@ -149,6 +160,10 @@ function SingleProductForm() {
         sizes: [],
         stockCount: '1',
         imageFile: '',
+        color: '',
+        condition: 'new',
+        location: '',
+        notes: '',
       });
 
       // Redirect to inventory after 2 seconds
@@ -204,6 +219,31 @@ function SingleProductForm() {
           </div>
         )}
 
+        {/* SHOE CODE - MOST IMPORTANT */}
+        <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4">
+          <h2 className="text-lg font-semibold mb-3 text-white">Shoe Tagging System</h2>
+          
+          <div>
+            <label className="block text-sm font-medium text-blue-300 mb-2">
+              Shoe Code * (e.g., ML-SH-001, FM-SH-110, CH-SH-024)
+            </label>
+            <input
+              type="text"
+              required
+              value={formData.shoeCode}
+              onChange={(e) => setFormData({...formData, shoeCode: e.target.value})}
+              className="w-full px-4 py-3 bg-gray-800 border border-blue-500/50 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="Enter unique shoe code"
+            />
+            <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-blue-300">
+              <div>• ML-SH-001 = Men's Large</div>
+              <div>• FM-SH-110 = Female Medium</div>
+              <div>• CH-SH-024 = Children</div>
+              <div>• BOY-SH-025 = Boys</div>
+            </div>
+          </div>
+        </div>
+
         {/* Basic Information */}
         <div>
           <h2 className="text-lg font-semibold mb-4 text-white">Shoe Details</h2>
@@ -222,7 +262,6 @@ function SingleProductForm() {
                 className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="e.g., Blue Rubber Shoes for Men"
               />
-              <p className="text-xs text-gray-500 mt-1">How you identify this shoe</p>
             </div>
 
             {/* Additional Notes */}
@@ -236,6 +275,20 @@ function SingleProductForm() {
                 onChange={(e) => setFormData({...formData, description: e.target.value})}
                 className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="e.g., New design, comfortable sole"
+              />
+            </div>
+
+            {/* Color */}
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Color
+              </label>
+              <input
+                type="text"
+                value={formData.color}
+                onChange={(e) => setFormData({...formData, color: e.target.value})}
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="e.g., Blue, Red, Black, Multi-color"
               />
             </div>
           </div>
@@ -333,6 +386,75 @@ function SingleProductForm() {
           </div>
         </div>
 
+        {/* Inventory Details */}
+        <div>
+          <h2 className="text-lg font-semibold mb-4 text-white">Inventory Details</h2>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Condition */}
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Condition
+              </label>
+              <select
+                value={formData.condition}
+                onChange={(e) => setFormData({...formData, condition: e.target.value})}
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="new">New</option>
+                <option value="used">Used</option>
+                <option value="refurbished">Refurbished</option>
+                <option value="washed">Washed</option>
+              </select>
+            </div>
+
+            {/* Location */}
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Storage Location
+              </label>
+              <input
+                type="text"
+                value={formData.location}
+                onChange={(e) => setFormData({...formData, location: e.target.value})}
+                className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="e.g., Shelf A, Box 3, Front Display"
+              />
+            </div>
+          </div>
+
+          {/* Stock Count */}
+          <div className="mt-6">
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Stock Count *
+            </label>
+            <input
+              type="number"
+              required
+              value={formData.stockCount}
+              onChange={(e) => setFormData({...formData, stockCount: e.target.value})}
+              className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              min="1"
+              placeholder="10"
+            />
+            <p className="text-xs text-gray-500 mt-1">Number of pairs available</p>
+          </div>
+
+          {/* Notes */}
+          <div className="mt-6">
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Additional Notes
+            </label>
+            <textarea
+              value={formData.notes}
+              onChange={(e) => setFormData({...formData, notes: e.target.value})}
+              className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="Any special notes about this shoe..."
+              rows={2}
+            />
+          </div>
+        </div>
+
         {/* Sizes */}
         <div>
           <h2 className="text-lg font-semibold mb-4 text-white">Available Sizes</h2>
@@ -385,44 +507,24 @@ function SingleProductForm() {
           )}
         </div>
 
-        {/* Image & Stock */}
+        {/* Image */}
         <div>
-          <h2 className="text-lg font-semibold mb-4 text-white">Image & Stock</h2>
+          <h2 className="text-lg font-semibold mb-4 text-white">Image</h2>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Stock Count */}
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Stock Count *
-              </label>
-              <input
-                type="number"
-                required
-                value={formData.stockCount}
-                onChange={(e) => setFormData({...formData, stockCount: e.target.value})}
-                className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                min="1"
-                placeholder="10"
-              />
-              <p className="text-xs text-gray-500 mt-1">Number of pairs available</p>
-            </div>
-
-            {/* Image Filename */}
-            <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Image Filename (Optional)
-              </label>
-              <input
-                type="text"
-                value={formData.imageFile}
-                onChange={(e) => setFormData({...formData, imageFile: e.target.value})}
-                className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="e.g., blue-shoes.jpg"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Place shoe image in <code className="bg-gray-900 px-1 rounded">public/shoes/</code> folder
-              </p>
-            </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Image Filename (Optional)
+            </label>
+            <input
+              type="text"
+              value={formData.imageFile}
+              onChange={(e) => setFormData({...formData, imageFile: e.target.value})}
+              className="w-full px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="e.g., blue-shoes.jpg"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Place shoe image in <code className="bg-gray-900 px-1 rounded">public/shoes/</code> folder
+            </p>
           </div>
         </div>
 
