@@ -1,11 +1,13 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { neon } from '@neondatabase/serverless';
+
+const sql = neon(process.env.DATABASE_URL!);
 
 export async function POST(request: Request) {
   try {
     const bundleData = await request.json();
 
-    // Validate required fields
+    // Validation
     if (!bundleData.baseName || !bundleData.baseName.trim()) {
       return NextResponse.json(
         { error: 'Bundle design name is required' },
@@ -54,61 +56,41 @@ export async function POST(request: Request) {
     // Generate unique bundle ID
     const bundleId = crypto.randomUUID();
 
-    // Create products for PostgreSQL
-    const productsToInsert = [];
-
+    // Create all products
     for (const pair of bundleData.shoePairs) {
       const productName = `${bundleData.baseName} - ${pair.color}`;
-
-      productsToInsert.push({
-        // Product identity
-        name: productName,
-        description: bundleData.description?.trim() || `${pair.color} ${bundleData.baseName}`,
-
-        // Bundle grouping
-        bundleId: bundleId,
-        baseName: bundleData.baseName.trim(),
-        color: pair.color,
-        size: pair.size,
-
-        // Pricing
-        price: bundleData.price,
-        sellingPrice: bundleData.sellingPrice,
-        expectedProfit: bundleData.sellingPrice - bundleData.price,
-
-        // Categories
-        genderCategory: bundleData.genderCategory || 'neutral',
-        ageGroup: bundleData.ageGroup || 'adult',
-
-        // Sizes (array for Prisma)
-        sizes: [pair.size],
-
-        // Inventory
-        stockCount: bundleData.stockPerItem || 1,
-        originalStock: bundleData.stockPerItem || 1,
-
-        // Image
-        imageFile: bundleData.imageFile,
-      });
+      
+      await sql`
+        INSERT INTO products (
+          name, description, "bundleId", "baseName", color, size,
+          price, "sellingPrice", "expectedProfit",
+          "genderCategory", "ageGroup", sizes, "stockCount", "originalStock", "imageFile"
+        ) VALUES (
+          ${productName},
+          ${bundleData.description?.trim() || `${pair.color} ${bundleData.baseName}`},
+          ${bundleId},
+          ${bundleData.baseName.trim()},
+          ${pair.color},
+          ${pair.size},
+          ${bundleData.price},
+          ${bundleData.sellingPrice},
+          ${bundleData.sellingPrice - bundleData.price},
+          ${bundleData.genderCategory || 'neutral'},
+          ${bundleData.ageGroup || 'adult'},
+          ${[pair.size]},
+          ${bundleData.stockPerItem || 1},
+          ${bundleData.stockPerItem || 1},
+          ${bundleData.imageFile}
+        )
+      `;
     }
 
-    // Insert all products in PostgreSQL
-    const result = await prisma.product.createMany({
-      data: productsToInsert,
-    });
-
-    console.log(`✅ Created ${result.count} bulk products`);
-
-    // Return success
-    return NextResponse.json(
-      {
-        success: true,
-        message: `Created ${productsToInsert.length} products successfully`,
-        count: productsToInsert.length,
-        bundleId: bundleId,
-      },
-      { status: 201 }
-    );
+    return NextResponse.json({
+      success: true,
+      message: `Created ${bundleData.shoePairs.length} products successfully`,
+      count: bundleData.shoePairs.length,
+      bundleId: bundleId,
+    }, { status: 201 });
 
   } catch (error: any) {
     console.error('Failed to create bulk products:', error);

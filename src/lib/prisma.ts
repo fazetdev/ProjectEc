@@ -1,9 +1,10 @@
-import { PrismaClient } from '@prisma/client'
+// We're using Neon serverless driver instead of Prisma
+// This file is kept for compatibility but exports a Neon SQL instance
 
-const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined
+import { neon } from '@neondatabase/serverless';
+
+if (!process.env.DATABASE_URL) {
+  throw new Error('DATABASE_URL is not set');
 }
 
-export const prisma = globalForPrisma.prisma ?? new PrismaClient()
-
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
+export const sql = neon(process.env.DATABASE_URL);

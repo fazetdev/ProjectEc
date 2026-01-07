@@ -6,7 +6,18 @@ const sql = neon(process.env.DATABASE_URL!);
 export async function GET() {
   try {
     const products = await sql`SELECT * FROM products ORDER BY "dateAdded" DESC`;
-    return NextResponse.json(products);
+    
+    // Convert decimal strings to numbers
+    const parsedProducts = products.map(product => ({
+      ...product,
+      price: parseFloat(product.price),
+      sellingPrice: parseFloat(product.sellingPrice),
+      expectedProfit: parseFloat(product.expectedProfit),
+      actualProfit: parseFloat(product.actualProfit),
+      lastSalePrice: product.lastSalePrice ? parseFloat(product.lastSalePrice) : 0,
+    }));
+    
+    return NextResponse.json(parsedProducts);
   } catch (error) {
     console.error('Neon GET Error:', error);
     return NextResponse.json({ error: 'Failed to fetch products' }, { status: 500 });
@@ -53,9 +64,9 @@ export async function POST(request: Request) {
       ) VALUES (
         ${body.name}, 
         ${body.description || ''}, 
-        ${body.price}, 
-        ${body.sellingPrice},
-        ${body.sellingPrice - body.price},
+        ${parseFloat(body.price)}, 
+        ${parseFloat(body.sellingPrice)},
+        ${parseFloat(body.sellingPrice) - parseFloat(body.price)},
         ${parseInt(body.stockCount) || 1},
         ${parseInt(body.stockCount) || 1},
         ${body.genderCategory || 'neutral'},

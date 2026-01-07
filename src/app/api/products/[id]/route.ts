@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { neon } from '@neondatabase/serverless';
+
+const sql = neon(process.env.DATABASE_URL!);
 
 export async function GET(
   request: Request,
@@ -15,21 +17,21 @@ export async function GET(
       );
     }
 
-    const product = await prisma.product.findUnique({
-      where: { id }
-    });
+    const result = await sql`
+      SELECT * FROM products WHERE id = ${parseInt(id)}
+    `;
 
-    if (!product) {
+    if (result.length === 0) {
       return NextResponse.json(
         { error: 'Product not found' },
         { status: 404 }
       );
     }
 
-    return NextResponse.json(product);
+    return NextResponse.json(result[0]);
     
   } catch (error) {
-    console.error('❌ Failed to fetch product:', error);
+    console.error('Failed to fetch product:', error);
     return NextResponse.json(
       { error: 'Failed to fetch product' },
       { status: 500 }

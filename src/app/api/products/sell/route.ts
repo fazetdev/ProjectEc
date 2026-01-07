@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { neon } from '@neondatabase/serverless';
+
+const sql = neon(process.env.DATABASE_URL!);
 
 export async function POST(request: Request) {
   try {
-    // Parse the request body
     const saleData = await request.json();
 
     // Validate required fields
@@ -21,17 +22,19 @@ export async function POST(request: Request) {
       );
     }
 
-    // Get the product from PostgreSQL
-    const product = await prisma.product.findUnique({
-      where: { id: saleData.productId }
-    });
+    // Get the product
+    const products = await sql`
+      SELECT * FROM products WHERE id = ${parseInt(saleData.productId)}
+    `;
 
-    if (!product) {
+    if (products.length === 0) {
       return NextResponse.json(
         { error: 'Product not found' },
         { status: 404 }
       );
     }
+
+    const product = products[0];
 
     if (product.stockCount <= 0) {
       return NextResponse.json(
@@ -46,39 +49,62 @@ export async function POST(request: Request) {
     const newTotalSales = product.totalSales + 1;
     const newActualProfit = product.actualProfit + profitThisSale;
 
-    // Update the product in PostgreSQL
-    const updatedProduct = await prisma.product.update({
-      where: { id: saleData.productId },
-      data: {
-        stockCount: newStockCount,
-        totalSales: newTotalSales,
-        actualProfit: newActualProfit,
-        lastSaleDate: new Date(),
-        lastSalePrice: saleData.salePrice,
-        isSold: newStockCount === 0, // Mark as sold if stock reaches 0
-        dateSold: newStockCount === 0 ? new Date() : product.dateSold
-      }
-    });
+    // Update the product
+    await sql`
+      UPDATE products 
+      SET 
+        "stockCount" = ${newStockCount},
+        "totalSales" = ${newTotalSales},
+        "actualProfit" = ${newActualProfit},
+        "lastSaleDate" = CURRENT_TIMESTAMP,
+        "lastSalePrice" = ${saleData.salePrice},
+        "isSold" = ${newStockCount === 0},
+        "dateSold" = ${newStockCount === 0 ? new Date() : product.dateSold}
+      WHERE id = ${parseInt(saleData.productId)}
+    `;
 
-    // Create sales record in PostgreSQL
-    const saleRecord = await prisma.sale.create({
-      data: {
-        productId: saleData.productId,
-        productName: product.name,
-        salePrice: saleData.salePrice,
-        costPrice: product.price,
-        profit: profitThisSale,
-        quantity: 1,
-        saleDate: new Date(),
-        timestamp: BigInt(Date.now())
-      }
-    });
+    // Create sales table if not exists
+    await sql`
+      CREATE TABLE IF NOT EXISTS sales (
+        id SERIAL PRIMARY KEY,
+        "productId" INTEGER,
+        "productName" TEXT,
+        "salePrice" DECIMAL(12,2),
+        "costPrice" DECIMAL(12,2),
+        "profit" DECIMAL(12,2),
+        "quantity" INTEGER DEFAULT 1,
+        "saleDate" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        "timestamp" BIGINT
+      )
+    `;
 
-    // Return success with updated product data
+    // Create sales record
+    await sql`
+      INSERT INTO sales (
+        "productId", "productName", "salePrice", "costPrice", "profit", "quantity", "timestamp"
+      ) VALUES (
+        ${parseInt(saleData.productId)},
+        ${product.name},
+        ${saleData.salePrice},
+        ${product.price},
+        ${profitThisSale},
+        1,
+        ${Date.now()}
+      )
+    `;
+
+    // Return success
     return NextResponse.json({
       success: true,
       message: 'Sale recorded successfully',
-      product: updatedProduct
+      product: {
+        ...product,
+        stockCount: newStockCount,
+        totalSales: newTotalSales,
+        actualProfit: newActualProfit,
+        lastSaleDate: new Date().toISOString(),
+        lastSalePrice: saleData.salePrice
+      }
     }, { status: 200 });
 
   } catch (error: any) {
