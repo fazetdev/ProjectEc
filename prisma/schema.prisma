@@ -1,0 +1,52 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Product {
+  id              String    @id @default(cuid())
+  name            String
+  description     String?
+  price           Float
+  sellingPrice    Float
+  expectedProfit  Float
+  actualProfit    Float     @default(0)
+  totalSales      Int       @default(0)
+  lastSaleDate    DateTime?
+  lastSalePrice   Float     @default(0)
+  genderCategory  String    @default("neutral")
+  ageGroup        String    @default("neutral")
+  sizes           String[]
+  stockCount      Int
+  originalStock   Int
+  isSold          Boolean   @default(false)
+  dateAdded       DateTime  @default(now())
+  dateSold        DateTime?
+  imageFile       String?
+  
+  // Bundle fields (optional)
+  bundleId        String?
+  baseName        String?
+  color           String?
+  size            String?
+
+  @@map("products")
+}
+
+model Sale {
+  id          String    @id @default(cuid())
+  productId   String
+  productName String
+  salePrice   Float
+  costPrice   Float
+  profit      Float
+  quantity    Int       @default(1)
+  saleDate    DateTime  @default(now())
+  timestamp   BigInt
+
+  @@map("sales")
+}

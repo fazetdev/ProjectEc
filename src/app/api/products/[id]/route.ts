@@ -1,34 +1,38 @@
-import { NextResponse } from 'next/server'
-import clientPromise from '@/lib/mongodb'
-import { ObjectId } from 'mongodb'
+import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/prisma';
 
 export async function GET(
   request: Request,
-  context: { params: { id: string } }
+  { params }: { params: { id: string } }
 ) {
-  const { id } = context.params
-
-  if (!id) {
-    return NextResponse.json({ error: 'Missing product ID' }, { status: 400 })
-  }
-
   try {
-    const client = await clientPromise
-    const db = client.db('shoetracker')
-
-    const product = await db
-      .collection('products')
-      .findOne({ _id: new ObjectId(id) })
-
-    if (!product) {
-      return NextResponse.json({ error: 'Product not found' }, { status: 404 })
+    const { id } = params;
+    
+    if (!id) {
+      return NextResponse.json(
+        { error: 'Missing product ID' },
+        { status: 400 }
+      );
     }
 
-    return NextResponse.json(product)
+    const product = await prisma.product.findUnique({
+      where: { id }
+    });
+
+    if (!product) {
+      return NextResponse.json(
+        { error: 'Product not found' },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json(product);
+    
   } catch (error) {
+    console.error('❌ Failed to fetch product:', error);
     return NextResponse.json(
       { error: 'Failed to fetch product' },
       { status: 500 }
-    )
+    );
   }
 }

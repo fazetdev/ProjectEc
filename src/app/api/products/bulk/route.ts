@@ -1,13 +1,8 @@
 import { NextResponse } from 'next/server';
-import clientPromise from '@/lib/mongodb';
+import { prisma } from '@/lib/prisma';
 
 export async function POST(request: Request) {
   try {
-    const client = await clientPromise;
-    const db = client.db('shoetracker');
-    const collection = db.collection('products');
-
-    // Parse the request body
     const bundleData = await request.json();
 
     // Validate required fields
@@ -59,54 +54,50 @@ export async function POST(request: Request) {
     // Generate unique bundle ID
     const bundleId = crypto.randomUUID();
 
-    // Create products - ALL GET SAME IMAGE
+    // Create products for PostgreSQL
     const productsToInsert = [];
-    
+
     for (const pair of bundleData.shoePairs) {
       const productName = `${bundleData.baseName} - ${pair.color}`;
-      
-      const productToInsert = {
+
+      productsToInsert.push({
         // Product identity
         name: productName,
         description: bundleData.description?.trim() || `${pair.color} ${bundleData.baseName}`,
-        
+
         // Bundle grouping
         bundleId: bundleId,
         baseName: bundleData.baseName.trim(),
         color: pair.color,
         size: pair.size,
-        
+
         // Pricing
         price: bundleData.price,
         sellingPrice: bundleData.sellingPrice,
-        
-        // Sales tracking
-        actualProfit: 0,
-        totalSales: 0,
-        lastSaleDate: null,
-        lastSalePrice: 0,
-        
+        expectedProfit: bundleData.sellingPrice - bundleData.price,
+
         // Categories
         genderCategory: bundleData.genderCategory || 'neutral',
         ageGroup: bundleData.ageGroup || 'adult',
-        
+
+        // Sizes (array for Prisma)
+        sizes: [pair.size],
+
         // Inventory
         stockCount: bundleData.stockPerItem || 1,
         originalStock: bundleData.stockPerItem || 1,
-        
-        // Timestamps
-        dateAdded: new Date().toISOString(),
-        dateSold: null,
-        
-        // Image - SAME FOR ALL SHOES IN BUNDLE
-        imageFile: bundleData.imageFile,
-      };
 
-      productsToInsert.push(productToInsert);
+        // Image
+        imageFile: bundleData.imageFile,
+      });
     }
 
-    // Insert all products
-    const result = await collection.insertMany(productsToInsert);
+    // Insert all products in PostgreSQL
+    const result = await prisma.product.createMany({
+      data: productsToInsert,
+    });
+
+    console.log(`✅ Created ${result.count} bulk products`);
 
     // Return success
     return NextResponse.json(
@@ -115,15 +106,17 @@ export async function POST(request: Request) {
         message: `Created ${productsToInsert.length} products successfully`,
         count: productsToInsert.length,
         bundleId: bundleId,
-        productIds: Object.values(result.insertedIds)
       },
       { status: 201 }
     );
 
-  } catch (error) {
+  } catch (error: any) {
     console.error('Failed to create bulk products:', error);
     return NextResponse.json(
-      { error: 'Failed to create bulk products' },
+      { 
+        error: 'Failed to create bulk products',
+        details: error.message || 'Unknown error'
+      },
       { status: 500 }
     );
   }

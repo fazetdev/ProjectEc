@@ -22,3 +22,5 @@ fix_line.js
 .vercel
 .env*.local
 .env*
+
+/src/generated/prisma
