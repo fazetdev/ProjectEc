@@ -6,16 +6,21 @@ if (!uri) {
   throw new Error('Please define the MONGODB_URI environment variable');
 }
 
+const isVercel = process.env.VERCEL === '1';
+
 const options = {
   serverApi: {
     version: ServerApiVersion.v1,
     strict: true,
     deprecationErrors: true,
   },
-  // Higher timeout and explicit settings to avoid handshake hang
-  connectTimeoutMS: 10000,
+  // Vercel needs these for stable handshakes
+  tls: isVercel,
+  ssl: isVercel,
+  serverSelectionTimeoutMS: 10000,
   socketTimeoutMS: 45000,
-  family: 4 // Force IPv4
+  connectTimeoutMS: 10000,
+  family: 4 // Force IPv4 to avoid SSL Handshake loops
 };
 
 let client: MongoClient;
