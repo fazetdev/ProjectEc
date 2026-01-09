@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Package, TrendingUp, DollarSign, Tag, ShoppingBag, AlertCircle, Eye, EyeOff, Smartphone } from 'lucide-react';
+import { useEffect, useState, useCallback } from 'react';
+import { Package, TrendingUp, DollarSign, Tag, ShoppingBag, AlertCircle, Eye, EyeOff, Wifi, WifiOff, RefreshCw, Cloud, CloudOff } from 'lucide-react';
+import { offlineStorage, PendingSale } from '@/lib/offlineStorage';
 
 type Product = {
   _id: string;
@@ -54,83 +55,154 @@ export default function Dashboard() {
   const [showProfit, setShowProfit] = useState(false);
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [quickSellMode, setQuickSellMode] = useState(false);
+  
+  // OFFLINE STATES
+  const [isOnline, setIsOnline] = useState(true);
+  const [pendingSales, setPendingSales] = useState<PendingSale[]>([]);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [usingCachedData, setUsingCachedData] = useState(false);
 
+  // Check network status
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      // Try to sync pending sales when back online
+      if (offlineStorage.hasPendingSales()) {
+        syncPendingSales();
+      }
+    };
+    
+    const handleOffline = () => setIsOnline(false);
+    
+    setIsOnline(navigator.onLine);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Load data
   useEffect(() => {
     fetchDashboardData();
+    loadPendingSales();
   }, []);
 
   const fetchDashboardData = async () => {
     try {
+      setLoading(true);
       const response = await fetch('/api/products');
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
       const data = await response.json();
       setProducts(data);
+      updateStats(data);
       
-      const totalProducts = data.length;
-      const totalStock = data.reduce((sum: number, p: Product) => sum + p.stockCount, 0);
-      const totalOriginalStock = data.reduce((sum: number, p: Product) => sum + p.originalStock, 0);
-      const totalExpectedProfit = data
-        .filter((p: Product) => !p.isSold)
-        .reduce((sum: number, p: Product) => sum + p.expectedProfit * p.stockCount, 0);
-      const totalActualProfit = data.reduce((sum: number, p: Product) => sum + p.actualProfit, 0);
-      const totalSales = data.reduce((sum: number, p: Product) => sum + p.totalSales, 0);
-      
-      const today = new Date().toISOString().split('T')[0];
-      const todaySales = data.filter((p: Product) => 
-        p.lastSaleDate && p.lastSaleDate.startsWith(today)
-      ).length;
-      
-      const todayProfit = data
-        .filter((p: Product) => p.lastSaleDate && p.lastSaleDate.startsWith(today))
-        .reduce((sum: number, p: Product) => sum + (p.lastSalePrice - p.price), 0);
-      
-      setStats({
-        totalProducts,
-        totalStock,
-        totalOriginalStock,
-        totalExpectedProfit,
-        totalActualProfit,
-        totalSales,
-        todaySales,
-        todayProfit
-      });
-      
+      // Cache data for offline use
+      offlineStorage.cacheDashboardData(data, calculateStats(data));
+      setUsingCachedData(false);
       setLoading(false);
+      
     } catch (err) {
       console.error('Failed to fetch products:', err);
+      
+      // Try to load cached data
+      const cached = offlineStorage.getCachedData();
+      if (cached) {
+        setProducts(cached.products || []);
+        setStats(cached.stats || getDefaultStats());
+        setUsingCachedData(true);
+        console.log('Using cached data');
+      }
+      
       setLoading(false);
     }
   };
 
-  const getLowStockItems = () => {
-    return products
-      .filter(p => p.stockCount > 0 && p.stockCount <= 3)
-      .sort((a, b) => a.stockCount - b.stockCount)
-      .slice(0, 5);
-  };
-
-  const getHotItems = () => {
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const updateStats = (data: Product[]) => {
+    const totalProducts = data.length;
+    const totalStock = data.reduce((sum: number, p: Product) => sum + p.stockCount, 0);
+    const totalOriginalStock = data.reduce((sum: number, p: Product) => sum + p.originalStock, 0);
+    const totalExpectedProfit = data
+      .filter((p: Product) => !p.isSold)
+      .reduce((sum: number, p: Product) => sum + p.expectedProfit * p.stockCount, 0);
+    const totalActualProfit = data.reduce((sum: number, p: Product) => sum + p.actualProfit, 0);
+    const totalSales = data.reduce((sum: number, p: Product) => sum + p.totalSales, 0);
     
-    return products
-      .filter(p => p.lastSaleDate && new Date(p.lastSaleDate) >= sevenDaysAgo)
-      .sort((a, b) => (b.totalSales || 0) - (a.totalSales || 0))
-      .slice(0, 3);
-  };
-
-  const handleQuickSell = () => {
-    const availableProducts = products.filter(p => p.stockCount > 0);
-    if (availableProducts.length === 0) {
-      alert('No products in stock to sell');
-      return;
-    }
+    const today = new Date().toISOString().split('T')[0];
+    const todaySales = data.filter((p: Product) => 
+      p.lastSaleDate && p.lastSaleDate.startsWith(today)
+    ).length;
     
-    setQuickSellMode(true);
-    setShowMobileMenu(false);
+    const todayProfit = data
+      .filter((p: Product) => p.lastSaleDate && p.lastSaleDate.startsWith(today))
+      .reduce((sum: number, p: Product) => sum + (p.lastSalePrice - p.price), 0);
+    
+    setStats({
+      totalProducts,
+      totalStock,
+      totalOriginalStock,
+      totalExpectedProfit,
+      totalActualProfit,
+      totalSales,
+      todaySales,
+      todayProfit
+    });
   };
 
-  const handleSellClick = (productId: string, expectedPrice: number) => {
+  const calculateStats = (data: Product[]): DashboardStats => {
+    const totalProducts = data.length;
+    const totalStock = data.reduce((sum: number, p: Product) => sum + p.stockCount, 0);
+    const totalOriginalStock = data.reduce((sum: number, p: Product) => sum + p.originalStock, 0);
+    const totalExpectedProfit = data
+      .filter((p: Product) => !p.isSold)
+      .reduce((sum: number, p: Product) => sum + p.expectedProfit * p.stockCount, 0);
+    const totalActualProfit = data.reduce((sum: number, p: Product) => sum + p.actualProfit, 0);
+    const totalSales = data.reduce((sum: number, p: Product) => sum + p.totalSales, 0);
+    
+    const today = new Date().toISOString().split('T')[0];
+    const todaySales = data.filter((p: Product) => 
+      p.lastSaleDate && p.lastSaleDate.startsWith(today)
+    ).length;
+    
+    const todayProfit = data
+      .filter((p: Product) => p.lastSaleDate && p.lastSaleDate.startsWith(today))
+      .reduce((sum: number, p: Product) => sum + (p.lastSalePrice - p.price), 0);
+    
+    return {
+      totalProducts,
+      totalStock,
+      totalOriginalStock,
+      totalExpectedProfit,
+      totalActualProfit,
+      totalSales,
+      todaySales,
+      todayProfit
+    };
+  };
+
+  const getDefaultStats = (): DashboardStats => ({
+    totalProducts: 0,
+    totalStock: 0,
+    totalOriginalStock: 0,
+    totalExpectedProfit: 0,
+    totalActualProfit: 0,
+    totalSales: 0,
+    todaySales: 0,
+    todayProfit: 0
+  });
+
+  const loadPendingSales = () => {
+    const sales = offlineStorage.getPendingSales();
+    setPendingSales(sales);
+  };
+
+  const handleSellClick = (productId: string, expectedPrice: number, productName: string) => {
     setSellingProductId(productId);
     setSalePrice(expectedPrice.toString());
     setSaleError('');
@@ -145,6 +217,43 @@ export default function Dashboard() {
     setSaleError('');
     setSaleSuccess('');
     
+    const salePriceNum = parseFloat(salePrice);
+    const product = products.find(p => p._id === sellingProductId);
+    
+    if (!product) {
+      setSaleError('Product not found');
+      return;
+    }
+
+    // If offline, save to pending sales
+    if (!isOnline) {
+      const saleId = offlineStorage.savePendingSale({
+        productId: sellingProductId,
+        productName: product.name,
+        salePrice: salePriceNum
+      });
+      
+      setSaleSuccess('Sale saved offline! Will sync when back online.');
+      loadPendingSales();
+      
+      // Update local state optimistically
+      const updatedProducts = products.map(p => 
+        p._id === sellingProductId 
+          ? { ...p, stockCount: Math.max(0, p.stockCount - 1) }
+          : p
+      );
+      setProducts(updatedProducts);
+      updateStats(updatedProducts);
+      
+      setTimeout(() => {
+        setSellingProductId(null);
+        setSalePrice('');
+      }, 2000);
+      
+      return;
+    }
+
+    // If online, try to sync immediately
     try {
       const response = await fetch('/api/products/sell', {
         method: 'POST',
@@ -153,7 +262,7 @@ export default function Dashboard() {
         },
         body: JSON.stringify({
           productId: sellingProductId,
-          salePrice: parseFloat(salePrice)
+          salePrice: salePriceNum
         }),
       });
       
@@ -172,8 +281,67 @@ export default function Dashboard() {
       }, 1500);
       
     } catch (err: any) {
-      setSaleError(err.message || 'Failed to record sale');
+      // If API fails, save offline
+      const saleId = offlineStorage.savePendingSale({
+        productId: sellingProductId,
+        productName: product.name,
+        salePrice: salePriceNum
+      });
+      
+      setSaleError(`Network error. Sale saved offline (ID: ${saleId})`);
+      loadPendingSales();
+      
+      // Still update local state optimistically
+      const updatedProducts = products.map(p => 
+        p._id === sellingProductId 
+          ? { ...p, stockCount: Math.max(0, p.stockCount - 1) }
+          : p
+      );
+      setProducts(updatedProducts);
+      updateStats(updatedProducts);
     }
+  };
+
+  const syncPendingSales = async () => {
+    if (!isOnline || isSyncing) return;
+    
+    const pending = offlineStorage.getPendingSales();
+    if (pending.length === 0) return;
+    
+    setIsSyncing(true);
+    
+    for (const sale of pending) {
+      if (sale.status === 'pending') {
+        offlineStorage.updateSaleStatus(sale.id, 'syncing');
+        loadPendingSales();
+        
+        try {
+          const response = await fetch('/api/products/sell', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              productId: sale.productId,
+              salePrice: sale.salePrice
+            }),
+          });
+          
+          if (response.ok) {
+            offlineStorage.removePendingSale(sale.id);
+          } else {
+            offlineStorage.updateSaleStatus(sale.id, 'failed');
+          }
+        } catch (error) {
+          offlineStorage.updateSaleStatus(sale.id, 'failed');
+        }
+        
+        loadPendingSales();
+      }
+    }
+    
+    setIsSyncing(false);
+    fetchDashboardData(); // Refresh data after sync
   };
 
   const cancelSale = () => {
@@ -182,6 +350,17 @@ export default function Dashboard() {
     setSaleError('');
     setSaleSuccess('');
     setQuickSellMode(false);
+  };
+
+  const handleQuickSell = () => {
+    const availableProducts = products.filter(p => p.stockCount > 0);
+    if (availableProducts.length === 0) {
+      alert('No products in stock to sell');
+      return;
+    }
+    
+    setQuickSellMode(true);
+    setShowMobileMenu(false);
   };
 
   const formatProfit = (amount: number) => {
@@ -194,6 +373,23 @@ export default function Dashboard() {
   const getImagePath = (imageFile: string) => {
     if (!imageFile) return '/shoes/default-shoe.jpg';
     return `/shoes/${imageFile}`;
+  };
+
+  const getLowStockItems = () => {
+    return products
+      .filter(p => p.stockCount > 0 && p.stockCount <= 3)
+      .sort((a, b) => a.stockCount - b.stockCount)
+      .slice(0, 5);
+  };
+
+  const getHotItems = () => {
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    
+    return products
+      .filter(p => p.lastSaleDate && new Date(p.lastSaleDate) >= sevenDaysAgo)
+      .sort((a, b) => (b.totalSales || 0) - (a.totalSales || 0))
+      .slice(0, 3);
   };
 
   if (loading) {
@@ -214,7 +410,15 @@ export default function Dashboard() {
       {sellingProductId && (
         <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4">
           <div className="bg-gray-800 border border-gray-700 rounded-2xl p-6 w-full max-w-md">
-            <h3 className="text-xl font-bold mb-4">Record Sale</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold">Record Sale</h3>
+              {!isOnline && (
+                <span className="flex items-center gap-1 text-yellow-400 text-sm">
+                  <WifiOff size={16} />
+                  Offline Mode
+                </span>
+              )}
+            </div>
             
             <form onSubmit={handleSellSubmit} className="space-y-4">
               <div>
@@ -250,7 +454,7 @@ export default function Dashboard() {
                   type="submit"
                   className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 rounded-xl font-medium text-lg transition-colors"
                 >
-                  Confirm Sale
+                  {isOnline ? 'Confirm Sale' : 'Save Offline'}
                 </button>
                 <button
                   type="button"
@@ -269,7 +473,23 @@ export default function Dashboard() {
       {quickSellMode && (
         <div className="fixed inset-0 bg-black/90 z-40 p-4 pt-20 overflow-y-auto">
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-xl font-bold">Quick Sell</h2>
+            <div>
+              <h2 className="text-xl font-bold">Quick Sell</h2>
+              <div className="flex items-center gap-2 mt-1">
+                {!isOnline && (
+                  <span className="flex items-center gap-1 text-yellow-400 text-xs">
+                    <WifiOff size={12} />
+                    Offline
+                  </span>
+                )}
+                {pendingSales.length > 0 && (
+                  <span className="flex items-center gap-1 text-blue-400 text-xs">
+                    <Cloud size={12} />
+                    {pendingSales.length} pending
+                  </span>
+                )}
+              </div>
+            </div>
             <button
               onClick={() => setQuickSellMode(false)}
               className="p-2 hover:bg-gray-800 rounded-lg"
@@ -286,7 +506,7 @@ export default function Dashboard() {
                 <div 
                   key={product._id} 
                   className="flex items-center gap-3 p-3 bg-gray-800/50 rounded-xl active:bg-gray-700 transition-colors"
-                  onClick={() => handleSellClick(product._id, product.sellingPrice)}
+                  onClick={() => handleSellClick(product._id, product.sellingPrice, product.name)}
                 >
                   <div className="h-14 w-14 bg-gray-900 rounded-lg overflow-hidden flex-shrink-0">
                     <img
@@ -318,10 +538,40 @@ export default function Dashboard() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-xl font-bold">Dashboard</h1>
-            <p className="text-xs text-gray-400">Shoe Business</p>
+            <div className="flex items-center gap-2">
+              <p className="text-xs text-gray-400">Shoe Business</p>
+              {!isOnline && (
+                <span className="flex items-center gap-1 text-yellow-400 text-xs">
+                  <WifiOff size={12} />
+                  Offline
+                </span>
+              )}
+              {usingCachedData && (
+                <span className="flex items-center gap-1 text-blue-400 text-xs">
+                  <Cloud size={12} />
+                  Cached
+                </span>
+              )}
+            </div>
           </div>
           
           <div className="flex items-center gap-3">
+            {/* Pending Sales Badge */}
+            {pendingSales.length > 0 && (
+              <button
+                onClick={syncPendingSales}
+                disabled={!isOnline || isSyncing}
+                className={`relative p-2 rounded-lg ${isOnline ? 'hover:bg-gray-800' : 'opacity-50'}`}
+              >
+                <Cloud size={20} className={isSyncing ? 'animate-pulse' : ''} />
+                {pendingSales.length > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                    {pendingSales.length}
+                  </span>
+                )}
+              </button>
+            )}
+            
             <button
               onClick={() => setShowProfit(!showProfit)}
               className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
@@ -364,6 +614,45 @@ export default function Dashboard() {
       </header>
 
       <main className="p-4 pb-24 max-w-6xl mx-auto">
+        {/* Network Status Banner */}
+        {!isOnline && (
+          <div className="mb-4 p-3 bg-yellow-500/20 border border-yellow-500/30 rounded-xl flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <WifiOff size={18} className="text-yellow-400" />
+              <span className="text-yellow-300">You're offline. Sales will be saved locally.</span>
+            </div>
+            {pendingSales.length > 0 && (
+              <span className="text-yellow-300 text-sm">
+                {pendingSales.length} pending sale(s)
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Pending Sales Sync Banner */}
+        {isOnline && pendingSales.length > 0 && (
+          <div className="mb-4 p-3 bg-blue-500/20 border border-blue-500/30 rounded-xl flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Cloud size={18} className="text-blue-400" />
+              <span className="text-blue-300">{pendingSales.length} pending sale(s) to sync</span>
+            </div>
+            <button
+              onClick={syncPendingSales}
+              disabled={isSyncing}
+              className="px-3 py-1 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+            >
+              {isSyncing ? (
+                <>
+                  <RefreshCw size={14} className="animate-spin" />
+                  Syncing...
+                </>
+              ) : (
+                'Sync Now'
+              )}
+            </button>
+          </div>
+        )}
+
         {/* Quick Sell FAB */}
         <button
           onClick={handleQuickSell}
@@ -476,7 +765,7 @@ export default function Dashboard() {
                     </div>
                   </div>
                   <button
-                    onClick={() => handleSellClick(product._id, product.sellingPrice)}
+                    onClick={() => handleSellClick(product._id, product.sellingPrice, product.name)}
                     className="px-3 py-1.5 bg-yellow-600 hover:bg-yellow-700 rounded-lg text-sm font-medium transition-colors"
                   >
                     Sell
@@ -497,7 +786,7 @@ export default function Dashboard() {
                 <div 
                   key={product._id}
                   className="flex items-center gap-3 p-3 bg-gray-800/50 rounded-xl active:bg-gray-700 transition-colors"
-                  onClick={() => handleSellClick(product._id, product.sellingPrice)}
+                  onClick={() => handleSellClick(product._id, product.sellingPrice, product.name)}
                 >
                   <div className="h-12 w-12 bg-gray-900 rounded-lg overflow-hidden flex-shrink-0">
                     <img
