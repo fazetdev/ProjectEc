@@ -1,12 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Package, TrendingUp, DollarSign, Tag } from 'lucide-react';
+import { Package, TrendingUp, DollarSign, Tag, ShoppingBag, AlertCircle, Eye, EyeOff, Smartphone } from 'lucide-react';
 
 type Product = {
   _id: string;
   name: string;
-  description: string;
   price: number;
   sellingPrice: number;
   expectedProfit: number;
@@ -21,7 +20,6 @@ type Product = {
   originalStock: number;
   isSold: boolean;
   dateAdded: string;
-  dateSold: string | null;
   imageFile: string;
 };
 
@@ -53,6 +51,9 @@ export default function Dashboard() {
   const [salePrice, setSalePrice] = useState('');
   const [saleError, setSaleError] = useState('');
   const [saleSuccess, setSaleSuccess] = useState('');
+  const [showProfit, setShowProfit] = useState(false);
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
+  const [quickSellMode, setQuickSellMode] = useState(false);
 
   useEffect(() => {
     fetchDashboardData();
@@ -65,7 +66,6 @@ export default function Dashboard() {
       const data = await response.json();
       setProducts(data);
       
-      // Calculate dashboard statistics
       const totalProducts = data.length;
       const totalStock = data.reduce((sum: number, p: Product) => sum + p.stockCount, 0);
       const totalOriginalStock = data.reduce((sum: number, p: Product) => sum + p.originalStock, 0);
@@ -75,7 +75,6 @@ export default function Dashboard() {
       const totalActualProfit = data.reduce((sum: number, p: Product) => sum + p.actualProfit, 0);
       const totalSales = data.reduce((sum: number, p: Product) => sum + p.totalSales, 0);
       
-      // Calculate today's sales (simplified - would need actual date filtering)
       const today = new Date().toISOString().split('T')[0];
       const todaySales = data.filter((p: Product) => 
         p.lastSaleDate && p.lastSaleDate.startsWith(today)
@@ -103,11 +102,40 @@ export default function Dashboard() {
     }
   };
 
+  const getLowStockItems = () => {
+    return products
+      .filter(p => p.stockCount > 0 && p.stockCount <= 3)
+      .sort((a, b) => a.stockCount - b.stockCount)
+      .slice(0, 5);
+  };
+
+  const getHotItems = () => {
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    
+    return products
+      .filter(p => p.lastSaleDate && new Date(p.lastSaleDate) >= sevenDaysAgo)
+      .sort((a, b) => (b.totalSales || 0) - (a.totalSales || 0))
+      .slice(0, 3);
+  };
+
+  const handleQuickSell = () => {
+    const availableProducts = products.filter(p => p.stockCount > 0);
+    if (availableProducts.length === 0) {
+      alert('No products in stock to sell');
+      return;
+    }
+    
+    setQuickSellMode(true);
+    setShowMobileMenu(false);
+  };
+
   const handleSellClick = (productId: string, expectedPrice: number) => {
     setSellingProductId(productId);
     setSalePrice(expectedPrice.toString());
     setSaleError('');
     setSaleSuccess('');
+    setQuickSellMode(false);
   };
 
   const handleSellSubmit = async (e: React.FormEvent) => {
@@ -137,7 +165,6 @@ export default function Dashboard() {
       
       setSaleSuccess('Sale recorded successfully! Stock updated.');
       
-      // Refresh dashboard data
       setTimeout(() => {
         fetchDashboardData();
         setSellingProductId(null);
@@ -154,19 +181,16 @@ export default function Dashboard() {
     setSalePrice('');
     setSaleError('');
     setSaleSuccess('');
+    setQuickSellMode(false);
   };
 
-  // Get recently added products (last 3)
-  const recentProducts = [...products]
-    .sort((a, b) => new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime())
-    .slice(0, 3);
+  const formatProfit = (amount: number) => {
+    if (showProfit) {
+      return `₦${amount.toFixed(2)}`;
+    }
+    return '••••••';
+  };
 
-  // Get best selling products
-  const bestSellers = [...products]
-    .sort((a, b) => b.totalSales - a.totalSales)
-    .slice(0, 3);
-
-  // Helper function to get image path
   const getImagePath = (imageFile: string) => {
     if (!imageFile) return '/shoes/default-shoe.jpg';
     return `/shoes/${imageFile}`;
@@ -174,18 +198,22 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-        <div className="text-white">Loading dashboard...</div>
+      <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-4">
+        <div className="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+        <p className="text-white">Loading your business data...</p>
       </div>
     );
   }
+
+  const lowStockItems = getLowStockItems();
+  const hotItems = getHotItems();
 
   return (
     <div className="min-h-screen bg-gray-900 text-white">
       {/* Sale Modal */}
       {sellingProductId && (
-        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4">
-          <div className="bg-gray-800 border border-gray-700 rounded-xl p-6 max-w-md w-full">
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4">
+          <div className="bg-gray-800 border border-gray-700 rounded-2xl p-6 w-full max-w-md">
             <h3 className="text-xl font-bold mb-4">Record Sale</h3>
             
             <form onSubmit={handleSellSubmit} className="space-y-4">
@@ -198,21 +226,21 @@ export default function Dashboard() {
                   step="0.01"
                   value={salePrice}
                   onChange={(e) => setSalePrice(e.target.value)}
-                  className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Enter actual sale price"
+                  className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-lg"
+                  placeholder="0.00"
                   autoFocus
                   required
                 />
               </div>
               
               {saleError && (
-                <div className="p-3 bg-red-500/10 border border-red-500/30 rounded-lg">
+                <div className="p-3 bg-red-500/20 border border-red-500/40 rounded-xl">
                   <p className="text-red-400 text-sm">{saleError}</p>
                 </div>
               )}
               
               {saleSuccess && (
-                <div className="p-3 bg-green-500/10 border border-green-500/30 rounded-lg">
+                <div className="p-3 bg-green-500/20 border border-green-500/40 rounded-xl">
                   <p className="text-green-400 text-sm">{saleSuccess}</p>
                 </div>
               )}
@@ -220,14 +248,14 @@ export default function Dashboard() {
               <div className="flex gap-3 pt-4">
                 <button
                   type="submit"
-                  className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-medium"
+                  className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 rounded-xl font-medium text-lg transition-colors"
                 >
                   Confirm Sale
                 </button>
                 <button
                   type="button"
                   onClick={cancelSale}
-                  className="flex-1 py-3 bg-gray-700 hover:bg-gray-600 rounded-lg font-medium"
+                  className="flex-1 py-3 bg-gray-700 hover:bg-gray-600 rounded-xl font-medium text-lg transition-colors"
                 >
                   Cancel
                 </button>
@@ -237,217 +265,331 @@ export default function Dashboard() {
         </div>
       )}
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold mb-2">Business Dashboard</h1>
-          <p className="text-gray-400">Real-time sales & inventory tracking</p>
-        </div>
-
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-5">
-            <div className="flex items-center">
-              <div className="p-2.5 rounded-lg bg-blue-500/20 text-blue-400">
-                <Package className="h-6 w-6" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm text-gray-400">Available Stock</p>
-                <p className="text-2xl font-bold">{stats.totalStock}</p>
-                <p className="text-xs text-gray-500 mt-1">of {stats.totalOriginalStock} total</p>
-              </div>
-            </div>
+      {/* Mobile Quick Sell Panel */}
+      {quickSellMode && (
+        <div className="fixed inset-0 bg-black/90 z-40 p-4 pt-20 overflow-y-auto">
+          <div className="flex justify-between items-center mb-6">
+            <h2 className="text-xl font-bold">Quick Sell</h2>
+            <button
+              onClick={() => setQuickSellMode(false)}
+              className="p-2 hover:bg-gray-800 rounded-lg"
+            >
+              ✕
+            </button>
           </div>
-
-          <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-5">
-            <div className="flex items-center">
-              <div className="p-2.5 rounded-lg bg-green-500/20 text-green-400">
-                <Tag className="h-6 w-6" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm text-gray-400">Today's Sales</p>
-                <p className="text-2xl font-bold">{stats.todaySales}</p>
-                <p className="text-xs text-gray-500 mt-1">₦{stats.todayProfit.toFixed(2)} profit</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-5">
-            <div className="flex items-center">
-              <div className="p-2.5 rounded-lg bg-yellow-500/20 text-yellow-400">
-                <TrendingUp className="h-6 w-6" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm text-gray-400">Total Sales</p>
-                <p className="text-2xl font-bold">{stats.totalSales}</p>
-                <p className="text-xs text-gray-500 mt-1">items sold</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-5">
-            <div className="flex items-center">
-              <div className="p-2.5 rounded-lg bg-purple-500/20 text-purple-400">
-                <DollarSign className="h-6 w-6" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm text-gray-400">Actual Profit</p>
-                <p className="text-2xl font-bold">₦{stats.totalActualProfit.toFixed(2)}</p>
-                <p className="text-xs text-gray-500 mt-1">from all sales</p>
-              </div>
-            </div>
+          
+          <div className="space-y-3">
+            {products
+              .filter(p => p.stockCount > 0)
+              .slice(0, 10)
+              .map((product) => (
+                <div 
+                  key={product._id} 
+                  className="flex items-center gap-3 p-3 bg-gray-800/50 rounded-xl active:bg-gray-700 transition-colors"
+                  onClick={() => handleSellClick(product._id, product.sellingPrice)}
+                >
+                  <div className="h-14 w-14 bg-gray-900 rounded-lg overflow-hidden flex-shrink-0">
+                    <img
+                      src={getImagePath(product.imageFile)}
+                      alt={product.name}
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-medium truncate">{product.name}</h3>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs text-gray-400">Stock: {product.stockCount}</span>
+                      <span className="text-xs text-gray-400">•</span>
+                      <span className="text-xs text-blue-400">₦{product.sellingPrice.toFixed(2)}</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm font-medium">₦{product.sellingPrice.toFixed(2)}</div>
+                    <div className="text-xs text-green-400">Sell →</div>
+                  </div>
+                </div>
+              ))}
           </div>
         </div>
+      )}
 
-        {/* Two Columns: Recent & Best Sellers */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          {/* Recent Additions */}
-          <div className="bg-gray-800/30 border border-gray-700 rounded-xl overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-700">
-              <h2 className="text-xl font-bold">Recent Additions</h2>
-              <p className="text-gray-400 text-sm">New shoes added to inventory</p>
+      {/* Mobile Header */}
+      <header className="sticky top-0 z-30 bg-gray-900/90 backdrop-blur-sm border-b border-gray-800 p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-xl font-bold">Dashboard</h1>
+            <p className="text-xs text-gray-400">Shoe Business</p>
+          </div>
+          
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowProfit(!showProfit)}
+              className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
+              aria-label={showProfit ? "Hide profits" : "Show profits"}
+            >
+              {showProfit ? <EyeOff size={20} /> : <Eye size={20} />}
+            </button>
+            
+            <button
+              onClick={() => setShowMobileMenu(!showMobileMenu)}
+              className="p-2 hover:bg-gray-800 rounded-lg lg:hidden transition-colors"
+              aria-label="Menu"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                {showMobileMenu ? (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                ) : (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                )}
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Mobile Quick Stats Bar */}
+        <div className="flex items-center justify-between mt-4 p-3 bg-gray-800/50 rounded-xl">
+          <div className="text-center">
+            <div className="text-2xl font-bold">{stats.totalStock}</div>
+            <div className="text-xs text-gray-400">In Stock</div>
+          </div>
+          <div className="text-center">
+            <div className="text-2xl font-bold">{stats.todaySales}</div>
+            <div className="text-xs text-gray-400">Today</div>
+          </div>
+          <div className="text-center">
+            <div className="text-2xl font-bold">{formatProfit(stats.todayProfit)}</div>
+            <div className="text-xs text-gray-400">Today's Profit</div>
+          </div>
+        </div>
+      </header>
+
+      <main className="p-4 pb-24 max-w-6xl mx-auto">
+        {/* Quick Sell FAB */}
+        <button
+          onClick={handleQuickSell}
+          className="fixed bottom-20 right-4 z-20 bg-green-600 hover:bg-green-700 text-white p-4 rounded-full shadow-lg lg:hidden transition-all active:scale-95"
+          aria-label="Quick Sell"
+        >
+          <ShoppingBag size={24} />
+        </button>
+
+        {/* Main Stats Grid - Mobile Stacked */}
+        <div className="space-y-4 mb-6">
+          <div className="bg-gray-800/30 border border-gray-700 rounded-2xl p-5">
+            <div className="flex items-start justify-between">
+              <div>
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="p-2.5 rounded-xl bg-blue-500/20 text-blue-400">
+                    <Package size={22} />
+                  </div>
+                  <div>
+                    <p className="text-sm text-gray-400">Total Inventory</p>
+                    <p className="text-2xl font-bold">{stats.totalProducts} items</p>
+                  </div>
+                </div>
+                <p className="text-sm text-gray-500">
+                  {stats.totalStock} available • {stats.totalOriginalStock - stats.totalStock} sold
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-gray-800/30 border border-gray-700 rounded-2xl p-5">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="p-2 rounded-xl bg-green-500/20 text-green-400">
+                  <Tag size={18} />
+                </div>
+                <div>
+                  <p className="text-sm text-gray-400">Today's Sales</p>
+                  <p className="text-xl font-bold">{stats.todaySales}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-gray-800/30 border border-gray-700 rounded-2xl p-5">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="p-2 rounded-xl bg-purple-500/20 text-purple-400">
+                  <DollarSign size={18} />
+                </div>
+                <div>
+                  <p className="text-sm text-gray-400">Today's Profit</p>
+                  <p className="text-xl font-bold">{formatProfit(stats.todayProfit)}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-gray-800/30 border border-gray-700 rounded-2xl p-5">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-xl bg-yellow-500/20 text-yellow-400">
+                  <TrendingUp size={18} />
+                </div>
+                <div>
+                  <p className="text-sm text-gray-400">Total Profit</p>
+                  <p className="text-2xl font-bold">{formatProfit(stats.totalActualProfit)}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowProfit(!showProfit)}
+                className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+                aria-label={showProfit ? "Hide profit" : "Show profit"}
+              >
+                {showProfit ? <EyeOff size={18} /> : <Eye size={18} />}
+              </button>
+            </div>
+            <p className="text-sm text-gray-500">From {stats.totalSales} total sales</p>
+          </div>
+        </div>
+
+        {/* Low Stock Alert Section */}
+        {lowStockItems.length > 0 && (
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-bold flex items-center gap-2">
+                <AlertCircle size={20} className="text-yellow-500" />
+                Low Stock Alert
+              </h2>
+              <span className="text-sm text-gray-400">{lowStockItems.length} items</span>
             </div>
             
-            <div className="p-4">
-              {recentProducts.length === 0 ? (
-                <div className="text-center py-8">
-                  <p className="text-gray-400">No shoes in inventory</p>
-                  <p className="text-gray-500 text-sm mt-1">Add your first pair of shoes</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {recentProducts.map((product) => (
-                    <div key={product._id} className="flex items-center gap-4 p-3 bg-gray-800/50 rounded-lg">
-                      <div className="h-16 w-16 bg-gray-900 rounded overflow-hidden flex-shrink-0">
-                        <img
-                          src={getImagePath(product.imageFile)}
-                          alt={product.name}
-                          className="h-full w-full object-cover"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).src = '/shoes/default-shoe.jpg';
-                          }}
-                        />
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="font-medium truncate">{product.name}</h3>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-xs text-gray-400">Stock: {product.stockCount}</span>
-                          <span className="text-xs text-gray-400">•</span>
-                          <span className="text-xs text-gray-400">Cost: ₦{product.price.toFixed(2)}</span>
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => handleSellClick(product._id, product.sellingPrice)}
-                        disabled={product.stockCount === 0}
-                        className={`px-4 py-2 rounded-lg text-sm font-medium ${
-                          product.stockCount === 0
-                            ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
-                            : 'bg-green-600 hover:bg-green-700 text-white'
-                        }`}
-                      >
-                        {product.stockCount === 0 ? 'Sold Out' : 'Sell'}
-                      </button>
+            <div className="space-y-2">
+              {lowStockItems.map((product) => (
+                <div 
+                  key={product._id}
+                  className="flex items-center gap-3 p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-xl"
+                >
+                  <div className="h-12 w-12 bg-gray-900 rounded-lg overflow-hidden flex-shrink-0">
+                    <img
+                      src={getImagePath(product.imageFile)}
+                      alt={product.name}
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-medium truncate">{product.name}</h3>
+                    <div className="flex items-center gap-3 mt-1">
+                      <span className="text-sm text-yellow-400">⚠️ Only {product.stockCount} left</span>
+                      <span className="text-xs text-gray-400">•</span>
+                      <span className="text-xs text-gray-400">{product.genderCategory} • {product.ageGroup}</span>
                     </div>
-                  ))}
+                  </div>
+                  <button
+                    onClick={() => handleSellClick(product._id, product.sellingPrice)}
+                    className="px-3 py-1.5 bg-yellow-600 hover:bg-yellow-700 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    Sell
+                  </button>
                 </div>
-              )}
+              ))}
             </div>
           </div>
+        )}
 
-          {/* Best Sellers */}
-          <div className="bg-gray-800/30 border border-gray-700 rounded-xl overflow-hidden">
-            <div className="px-6 py-4 border-b border-gray-700">
-              <h2 className="text-xl font-bold">Best Sellers</h2>
-              <p className="text-gray-400 text-sm">Top selling shoes</p>
-            </div>
+        {/* Hot Items This Week */}
+        {hotItems.length > 0 && (
+          <div className="mb-6">
+            <h2 className="text-lg font-bold mb-3">Hot This Week</h2>
             
-            <div className="p-4">
-              {bestSellers.length === 0 ? (
-                <div className="text-center py-8">
-                  <p className="text-gray-400">No sales recorded yet</p>
-                  <p className="text-gray-500 text-sm mt-1">Sell shoes to see best sellers</p>
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {bestSellers.map((product) => (
-                    <div key={product._id} className="flex items-center gap-4 p-3 bg-gray-800/50 rounded-lg">
-                      <div className="h-16 w-16 bg-gray-900 rounded overflow-hidden flex-shrink-0">
-                        <img
-                          src={getImagePath(product.imageFile)}
-                          alt={product.name}
-                          className="h-full w-full object-cover"
-                          onError={(e) => {
-                            (e.target as HTMLImageElement).src = '/shoes/default-shoe.jpg';
-                          }}
-                        />
-                      </div>
-                      <div className="flex-1">
-                        <h3 className="font-medium truncate">{product.name}</h3>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="text-xs text-green-400">Sold: {product.totalSales}</span>
-                          <span className="text-xs text-gray-400">•</span>
-                          <span className="text-xs text-blue-400">Profit: ₦{product.actualProfit.toFixed(2)}</span>
-                          {product.lastSaleDate && (
-                            <>
-                              <span className="text-xs text-gray-400">•</span>
-                              <span className="text-xs text-gray-400">
-                                Last: {new Date(product.lastSaleDate).toLocaleDateString()}
-                              </span>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                      <button
-                        onClick={() => handleSellClick(product._id, product.sellingPrice)}
-                        disabled={product.stockCount === 0}
-                        className={`px-4 py-2 rounded-lg text-sm font-medium ${
-                          product.stockCount === 0
-                            ? 'bg-gray-700 text-gray-400 cursor-not-allowed'
-                            : 'bg-green-600 hover:bg-green-700 text-white'
-                        }`}
-                      >
-                        {product.stockCount === 0 ? 'Sold Out' : 'Sell'}
-                      </button>
+            <div className="space-y-2">
+              {hotItems.map((product) => (
+                <div 
+                  key={product._id}
+                  className="flex items-center gap-3 p-3 bg-gray-800/50 rounded-xl active:bg-gray-700 transition-colors"
+                  onClick={() => handleSellClick(product._id, product.sellingPrice)}
+                >
+                  <div className="h-12 w-12 bg-gray-900 rounded-lg overflow-hidden flex-shrink-0">
+                    <img
+                      src={getImagePath(product.imageFile)}
+                      alt={product.name}
+                      className="h-full w-full object-cover"
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-medium truncate">{product.name}</h3>
+                    <div className="flex items-center gap-3 mt-1">
+                      <span className="text-sm text-green-400">🔥 {product.totalSales || 0} sold</span>
+                      <span className="text-xs text-gray-400">•</span>
+                      <span className="text-xs text-blue-400">₦{product.sellingPrice.toFixed(2)}</span>
                     </div>
-                  ))}
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm font-medium">{product.stockCount} in stock</div>
+                    <div className="text-xs text-gray-400">Tap to sell</div>
+                  </div>
                 </div>
-              )}
+              ))}
             </div>
+          </div>
+        )}
+
+        {/* Category Summary */}
+        <div className="bg-gray-800/30 border border-gray-700 rounded-2xl p-5 mb-6">
+          <h2 className="text-lg font-bold mb-4">Inventory by Category</h2>
+          
+          <div className="space-y-4">
+            {['Men', 'Women', 'Kids'].map((gender) => {
+              const genderProducts = products.filter(p => p.genderCategory === gender);
+              const inStock = genderProducts.reduce((sum, p) => sum + p.stockCount, 0);
+              const total = genderProducts.reduce((sum, p) => sum + p.originalStock, 0);
+              
+              return (
+                <div key={gender} className="flex items-center justify-between">
+                  <div>
+                    <span className="font-medium">{gender}</span>
+                    <div className="text-sm text-gray-400">
+                      {inStock} in stock • {total - inStock} sold
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-medium">{genderProducts.length} models</div>
+                    <div className="text-sm text-gray-400">
+                      {total > 0 ? Math.round((inStock / total) * 100) : 0}% remaining
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
 
-        {/* Quick Stats */}
-        <div className="bg-gray-800/30 border border-gray-700 rounded-xl p-6">
-          <h3 className="text-lg font-bold mb-4">Inventory Health</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="p-4 bg-gray-800/50 rounded-lg">
-              <p className="text-gray-400 text-sm">Stock Turnover</p>
-              <p className="text-2xl font-bold mt-1">
-                {stats.totalOriginalStock > 0 
-                  ? ((stats.totalSales / stats.totalOriginalStock) * 100).toFixed(1) 
-                  : '0'}%
-              </p>
-              <p className="text-xs text-gray-500 mt-1">of stock sold</p>
-            </div>
-            <div className="p-4 bg-gray-800/50 rounded-lg">
-              <p className="text-gray-400 text-sm">Avg Profit Margin</p>
-              <p className="text-2xl font-bold mt-1">
-                {stats.totalSales > 0
-                  ? ((stats.totalActualProfit / (stats.totalActualProfit + (stats.totalSales * products.reduce((sum, p) => sum + p.price, 0) / products.length))) * 100).toFixed(1)
-                  : '0'}%
-              </p>
-              <p className="text-xs text-gray-500 mt-1">per sale</p>
-            </div>
-            <div className="p-4 bg-gray-800/50 rounded-lg">
-              <p className="text-gray-400 text-sm">Sales Velocity</p>
-              <p className="text-2xl font-bold mt-1">
-                {stats.totalSales > 0 ? (stats.totalSales / products.length).toFixed(1) : '0'}
-              </p>
-              <p className="text-xs text-gray-500 mt-1">sales per product</p>
-            </div>
-          </div>
+        {/* Mobile Bottom Nav */}
+        <div className="fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 p-3 flex justify-around z-30 lg:hidden">
+          <button
+            onClick={handleQuickSell}
+            className="flex flex-col items-center p-2 hover:text-blue-400 transition-colors"
+          >
+            <ShoppingBag size={22} />
+            <span className="text-xs mt-1">Sell</span>
+          </button>
+          
+          <button
+            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            className="flex flex-col items-center p-2 hover:text-blue-400 transition-colors"
+          >
+            <Package size={22} />
+            <span className="text-xs mt-1">Stock</span>
+          </button>
+          
+          <button
+            onClick={() => setShowProfit(!showProfit)}
+            className="flex flex-col items-center p-2 hover:text-blue-400 transition-colors"
+          >
+            {showProfit ? <EyeOff size={22} /> : <Eye size={22} />}
+            <span className="text-xs mt-1">{showProfit ? 'Hide' : 'Show'}</span>
+          </button>
         </div>
       </main>
+
+      {/* Desktop Quick Sell Button */}
+      <button
+        onClick={handleQuickSell}
+        className="fixed bottom-6 right-6 z-20 bg-green-600 hover:bg-green-700 text-white px-5 py-3 rounded-full shadow-lg hidden lg:flex items-center gap-2 transition-all hover:scale-105"
+      >
+        <ShoppingBag size={20} />
+        <span className="font-medium">Quick Sell</span>
+      </button>
     </div>
   );
 }
