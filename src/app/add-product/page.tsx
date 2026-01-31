@@ -20,7 +20,7 @@ export default function AddProduct() {
           <h1 className="text-2xl font-bold mb-2">Add Shoes to Inventory</h1>
           <p className="text-gray-400">Choose how you want to add shoes</p>
           <p className="text-sm text-blue-400 mt-2">
-            💡 Use shoe codes like: ML-SH-001 (Men's Large), FM-SH-110 (Female Medium), CH-SH-024 (Children)
+            💡 Use shoe codes like: SIMPLE AS SH-FZ-001 ETC
           </p>
         </div>
 
@@ -95,7 +95,7 @@ function SingleProductForm() {
     try {
       // Validate required fields
       if (!formData.shoeCode.trim()) {
-        throw new Error('Shoe Code is required (e.g., ML-SH-001, FM-SH-110)');
+        throw new Error('Shoe Code is required (e.g. SH-FZ-001)');
       }
       
       if (!formData.name.trim()) {
@@ -225,7 +225,7 @@ function SingleProductForm() {
           
           <div>
             <label className="block text-sm font-medium text-blue-300 mb-2">
-              Shoe Code * (e.g., ML-SH-001, FM-SH-110, CH-SH-024)
+              Shoe Code * (e.g., SH-FZ-001)
             </label>
             <input
               type="text"
@@ -236,10 +236,8 @@ function SingleProductForm() {
               placeholder="Enter unique shoe code"
             />
             <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-blue-300">
-              <div>• ML-SH-001 = Men's Large</div>
-              <div>• FM-SH-110 = Female Medium</div>
-              <div>• CH-SH-024 = Children</div>
-              <div>• BOY-SH-025 = Boys</div>
+              <div>• GENERAL: SH-FZ-001</div>
+            
             </div>
           </div>
         </div>

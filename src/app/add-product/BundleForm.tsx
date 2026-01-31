@@ -35,7 +35,7 @@ export default function BundleForm() {
     shoePairs: [] as ShoePair[],
     stockPerItem: '1',
     bundleImage: '', // ONE image for ALL shoes in bundle
-    bundleCodePrefix: '', // e.g., ML-SH, FM-SH, CH-SH
+    bundleCodePrefix: '', // e.g., SH-FZ-001
     location: '',
     condition: 'new',
   });
@@ -111,7 +111,7 @@ export default function BundleForm() {
       }
 
       if (!formData.bundleCodePrefix.trim()) {
-        throw new Error('Bundle code prefix is required (e.g., ML-SH, FM-SH, CH-SH)');
+        throw new Error('Bundle code prefix is required (e.g., SH-FS-001)');
       }
 
       if (!formData.price || parseFloat(formData.price) <= 0) {
@@ -224,7 +224,7 @@ export default function BundleForm() {
           
           <div className="mb-4">
             <label className="block text-sm font-medium text-blue-300 mb-2">
-              Bundle Code Prefix * (e.g., ML-SH, FM-SH, CH-SH, BOY-SH, GIRL-SH)
+              Bundle Code Prefix * (e.g., SH-FZ-001)
             </label>
             <input
               type="text"
@@ -238,11 +238,8 @@ export default function BundleForm() {
               placeholder="Enter bundle prefix"
             />
             <div className="mt-2 grid grid-cols-2 gap-2 text-xs text-blue-300">
-              <div>• ML-SH = Men's Large Shoes</div>
-              <div>• FM-SH = Female Medium Shoes</div>
-              <div>• CH-SH = Children Shoes</div>
-              <div>• BOY-SH = Boys Shoes</div>
-              <div>• GIRL-SH = Girls Shoes</div>
+              <div>• SH-FZ-001</div>
+            
             </div>
           </div>
 
